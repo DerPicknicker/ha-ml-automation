@@ -1,5 +1,9 @@
 # ML Automation
 
+[![Validate](https://github.com/DerPicknicker/ha-ml-automation/actions/workflows/validate.yml/badge.svg)](https://github.com/DerPicknicker/ha-ml-automation/actions/workflows/validate.yml)
+[![HACS custom repository](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A Home Assistant integration that learns the habits of an entity and acts on
 them, so you don't have to write an automation for every device.
 
@@ -15,8 +19,9 @@ If your routine changes, press **Re-learn** and it starts from scratch.
 
 ## Installation
 
-**HACS:** add this repository as a custom repository (type *Integration*),
-install *ML Automation* and restart Home Assistant.
+**HACS:** open HACS, choose *⋮ → Custom repositories*, add
+`https://github.com/DerPicknicker/ha-ml-automation` with type *Integration*,
+then install *ML Automation* and restart Home Assistant.
 
 **Manually:** copy `custom_components/ml_automation` into the
 `custom_components` folder of your Home Assistant configuration and restart.
@@ -125,7 +130,7 @@ sensor.
 
 ## Problems and ideas
 
-Please use the issue forms of this repository. For bugs, attach the diagnostics
+Please use the [issue forms](https://github.com/DerPicknicker/ha-ml-automation/issues/new/choose). For bugs, attach the diagnostics
 of the pattern (*⋮ → Download diagnostics* on the pattern under *Settings →
 Devices & services → ML Automation*).
 

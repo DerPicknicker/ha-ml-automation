@@ -1,13 +1,17 @@
 {
   "domain": "ml_automation",
   "name": "ML Automation",
-  "after_dependencies": ["recorder"],
-  "codeowners": [],
+  "after_dependencies": [
+    "recorder"
+  ],
+  "codeowners": [
+    "@DerPicknicker"
+  ],
   "config_flow": true,
-  "documentation": "https://github.com/louiswelc/ml_automation",
+  "documentation": "https://github.com/DerPicknicker/ha-ml-automation",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/louiswelc/ml_automation/issues",
+  "issue_tracker": "https://github.com/DerPicknicker/ha-ml-automation/issues",
   "requirements": [],
   "version": "0.1.0"
 }

@@ -18,7 +18,7 @@ Please search the existing issues before opening a new one.
 ## Development setup
 
 ```bash
-git clone <your fork>
+git clone https://github.com/<you>/ha-ml-automation.git
 cd ha-ml-automation
 python3 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
