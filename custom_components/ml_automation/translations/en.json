@@ -63,6 +63,9 @@
       }
     },
     "button": {
+      "apply_suggestion": {
+        "name": "Apply suggestion"
+      },
       "predict_now": {
         "name": "Predict now"
       },
@@ -82,8 +85,10 @@
       "status": {
         "name": "Status",
         "state": {
-          "learning": "Learning",
-          "ready": "Ready",
+          "collecting": "Collecting data",
+          "no_activity": "No activity seen yet",
+          "no_pattern": "No regular pattern yet",
+          "ready": "Ready, suggesting only",
           "controlling": "Controlling",
           "postponed": "Switch-off postponed"
         }
@@ -99,6 +104,14 @@
       },
       "days_of_data": {
         "name": "Days of data"
+      },
+      "suggestion": {
+        "name": "Suggestion",
+        "state": {
+          "none": "Nothing",
+          "switch_on": "Switch on",
+          "switch_off": "Switch off"
+        }
       }
     },
     "switch": {

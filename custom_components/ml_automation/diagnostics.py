@@ -29,6 +29,9 @@ async def async_get_config_entry_diagnostics(
             }
             for entity in manager.learn_entities
         },
+        "recorded": manager.recording_summary(),
+        "active_slots": manager.model.active_slots,
+        "suggestion": action.kind if (action := manager.suggestion) else None,
         "detected_active": manager.is_active,
         "in_use": manager.in_use,
         "predicted_active": manager.predicted_active,

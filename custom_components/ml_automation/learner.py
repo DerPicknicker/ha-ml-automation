@@ -385,6 +385,9 @@ class Model:
     forest: Forest | None = None
     habits: list[Habit] = field(default_factory=list)
     thresholds: dict[str, float | None] = field(default_factory=dict)
+    # Number of trained-on slots that were in use; 0 means there was nothing
+    # to find a pattern in.
+    active_slots: int = 0
 
 
 def learn(
@@ -436,12 +439,14 @@ def learn(
                 in_use[slot] = False
         occupancy[day] = in_use
 
+    active_slots = sum(1 for slots in occupancy.values() for slot in slots if slot)
     forest = train_forest(
         occupancy, today=today, half_life_days=half_life_days, min_days=min_days
     )
     if forest is None:
-        return Model(thresholds=thresholds)
-    return Model(forest, find_habits(forest.weekly_profile(), confidence), thresholds)
+        return Model(thresholds=thresholds, active_slots=active_slots)
+    habits = find_habits(forest.weekly_profile(), confidence)
+    return Model(forest, habits, thresholds, active_slots)
 
 
 def upcoming_actions(

@@ -18,13 +18,18 @@ from homeassistant.const import (
 )
 from homeassistant.core import (
     Context,
+    Event,
     HomeAssistant,
     State,
     callback,
     split_entity_id,
 )
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -46,19 +51,27 @@ from .const import (
     DEFAULT_OFF_DELAY_MINUTES,
     DEFAULT_WINDOW_DAYS,
     DOMAIN,
+    EVENT_SUGGESTION,
     INACTIVE_STATES,
     PENDING_OFF_MAX_HOURS,
+    RELEARN_DAYS,
     SAVE_DELAY_SECONDS,
+    STATUS_COLLECTING,
     STATUS_CONTROLLING,
-    STATUS_LEARNING,
+    STATUS_NO_ACTIVITY,
+    STATUS_NO_PATTERN,
     STATUS_POSTPONED,
     STATUS_READY,
+    SUGGESTION_CONFIDENCE,
+    SUGGESTION_OFF,
+    SUGGESTION_ON,
     STORAGE_VERSION,
     SWITCH_SERVICES,
     TARGET_OFF_STATES,
 )
 from .learner import (
     KIND_NUMERIC,
+    KIND_OFF,
     KIND_ON,
     KIND_STATE,
     SLOT_MINUTES,
@@ -139,6 +152,7 @@ class PatternManager:
         self._pending_off: Action | None = None
         self._pending_off_since: datetime | None = None
         self._idle_since: datetime | None = None
+        self._announced: tuple[str, datetime] | None = None
         self._unsubs: list[Callable[[], None]] = []
 
     # --- Configuration --------------------------------------------------
@@ -205,14 +219,21 @@ class PatternManager:
     def status(self) -> str:
         """Summarise what the manager is currently doing."""
         if not self.habits:
-            return STATUS_LEARNING
+            if self.days_of_data < self.min_days:
+                return STATUS_COLLECTING
+            if not self.model.active_slots:
+                return STATUS_NO_ACTIVITY
+            return STATUS_NO_PATTERN
         if self._pending_off is not None:
             return STATUS_POSTPONED
-        if self.enabled and (
-            self.conf.get(CONF_CONTROL_ON, True) or self.conf.get(CONF_CONTROL_OFF, True)
-        ):
+        if self._acts(KIND_ON) or self._acts(KIND_OFF):
             return STATUS_CONTROLLING
         return STATUS_READY
+
+    def _acts(self, kind: str) -> bool:
+        """Return whether we switch in this direction by ourselves."""
+        direction = CONF_CONTROL_ON if kind == KIND_ON else CONF_CONTROL_OFF
+        return self.enabled and self.conf.get(direction, True)
 
     def entity_active(self, entity_id: str) -> bool | None:
         """Return whether a learning entity is active right now.
@@ -232,10 +253,16 @@ class PatternManager:
     @property
     def is_active(self) -> bool | None:
         """Return whether what the model learns from is active right now."""
-        states = [self.entity_active(entity) for entity in self.label_entities]
-        if any(states):
+        if any(self.entity_active(entity) for entity in self.label_entities):
             return True
-        return None if all(state is None for state in states) else False
+        # A sensor without a learned level is not "unknown" to the user, there
+        # simply is no activity to report. Unknown is for unavailable entities.
+        if all(
+            sample_state(self.hass.states.get(entity)) is None
+            for entity in self.label_entities
+        ):
+            return None
+        return False
 
     @property
     def in_use(self) -> bool:
@@ -264,6 +291,66 @@ class PatternManager:
         now = dt_util.now()
         return self.model.forest.probability(now.weekday(), _slot_of(now))
 
+    @property
+    def suggestion(self) -> Action | None:
+        """Return what the user probably wants done right now, if anything.
+
+        That is the switching the pattern calls for but that we are not doing
+        ourselves, because the automation is off or that direction is
+        disabled. Only offered when the model is sure enough.
+        """
+        now = dt_util.now()
+        if (action := self.last_due_action(now)) is None or self._acts(action.kind):
+            return None
+        state = self.hass.states.get(self.control_entity)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        is_off = state.state in TARGET_OFF_STATES
+        probability = self.probability or 0.0
+        if action.kind == KIND_ON:
+            # Past the learned start, the use has to be expected right now;
+            # the switch-off that ends this period is still up to an hour out.
+            still_expected = now < action.habit_time or probability >= (
+                self.conf.get(CONF_MIN_CONFIDENCE, DEFAULT_MIN_CONFIDENCE) / 100
+            )
+            if is_off and still_expected and (
+                action.habit.confidence >= SUGGESTION_CONFIDENCE
+            ):
+                return action
+            return None
+        if is_off or self.in_use or 1 - probability < SUGGESTION_CONFIDENCE:
+            return None
+        return action
+
+    def suggestion_confidence(self, action: Action) -> float:
+        """Return how sure the model is about a suggestion."""
+        if action.kind == KIND_ON:
+            return action.habit.confidence
+        return 1 - (self.probability or 0.0)
+
+    def recording_summary(self) -> dict[str, dict[str, Any]]:
+        """Summarise what was recorded per learning entity, for diagnostics."""
+        summary = {}
+        for entity in self.learn_entities:
+            values = [
+                value
+                for data in self._days.values()
+                for value in data.get(entity, ())
+                if value is not None
+            ]
+            summary[entity] = {
+                "kind": self._kinds.get(entity),
+                "days": sum(
+                    1
+                    for data in self._days.values()
+                    if any(value is not None for value in data.get(entity, ()))
+                ),
+                "slots": len(values),
+                "min": min(values, default=None),
+                "max": max(values, default=None),
+            }
+        return summary
+
     def next_action(self, kind: str) -> Action | None:
         """Return the next scheduled action of the given kind."""
         now = dt_util.now()
@@ -289,7 +376,7 @@ class PatternManager:
         for entity in self.learn_entities:
             if entity not in self._imported:
                 self._imported.add(entity)
-                await self._async_import_history(entity, now)
+                await self._async_import_history(entity, now, self._window_days)
 
         self._today = now.date()
         self._last_tick = now
@@ -299,6 +386,13 @@ class PatternManager:
 
         self._unsubs.append(
             async_track_time_change(self.hass, self._async_tick, second=0)
+        )
+        # Suggestions depend on the state of the controlled entity; don't make
+        # the user wait for the next tick after switching it.
+        self._unsubs.append(
+            async_track_state_change_event(
+                self.hass, [self.control_entity], self._async_control_changed
+            )
         )
 
     async def async_stop(self) -> None:
@@ -335,8 +429,18 @@ class PatternManager:
             await self._async_execute(action, now)
         self._notify()
 
+    async def async_apply_suggestion(self) -> None:
+        """Do what is currently suggested."""
+        if (action := self.suggestion) is not None:
+            await self._async_switch(action, dt_util.now())
+        self._notify()
+
     async def async_relearn(self) -> None:
-        """Forget everything and start learning from scratch."""
+        """Forget everything and learn again from the most recent days only.
+
+        For when a routine changed for good: older data would keep pulling the
+        model back to the old habit for weeks.
+        """
         now = dt_util.now()
         self._days = {}
         self._ignored = {}
@@ -344,6 +448,8 @@ class PatternManager:
         self._samples = {}
         self.last_action = None
         self._clear_pending_off()
+        for entity in self.learn_entities:
+            await self._async_import_history(entity, now, RELEARN_DAYS)
         await self._async_rebuild_model(now)
         await self._store.async_save(self._data_to_save())
         self._notify()
@@ -426,14 +532,16 @@ class PatternManager:
                 slots.append(slot)
             moment += timedelta(minutes=SLOT_MINUTES)
 
-    async def _async_import_history(self, entity: str, now: datetime) -> None:
+    async def _async_import_history(
+        self, entity: str, now: datetime, days: int
+    ) -> None:
         """Seed the recording of an entity from what the recorder knows."""
         if "recorder" not in self.hass.config.components:
             return
         # pylint: disable-next=import-outside-toplevel
         from homeassistant.components.recorder import get_instance, history
 
-        first_day = now.date() - timedelta(days=self._window_days)
+        first_day = now.date() - timedelta(days=days)
         start = dt_util.start_of_local_day(first_day)
 
         def _load() -> tuple[dict[str, list[float | None]], str | None]:
@@ -546,6 +654,10 @@ class PatternManager:
         await self._async_check_pending_off(now)
         self._notify()
 
+    @callback
+    def _async_control_changed(self, event: Event) -> None:
+        self._notify()
+
     async def _async_execute(self, action: Action, now: datetime) -> None:
         if not self.enabled:
             return
@@ -635,4 +747,34 @@ class PatternManager:
 
     @callback
     def _notify(self) -> None:
+        self._announce_suggestion()
         async_dispatcher_send(self.hass, signal_update(self.entry.entry_id))
+
+    def _announce_suggestion(self) -> None:
+        """Fire an event when a new suggestion comes up.
+
+        Lets an automation turn suggestions into, say, a notification with a
+        button on a phone, without this integration having to know about
+        phones.
+        """
+        action = self.suggestion
+        key = (action.kind, action.habit_time) if action else None
+        if key == self._announced:
+            return
+        self._announced = key
+        if action is None:
+            return
+        unique_id = f"{self.entry.entry_id}_apply_suggestion"
+        self.hass.bus.async_fire(
+            EVENT_SUGGESTION,
+            {
+                "entry_id": self.entry.entry_id,
+                "name": self.entry.title,
+                "entity_id": self.control_entity,
+                "suggestion": SUGGESTION_ON if action.kind == KIND_ON else SUGGESTION_OFF,
+                "confidence": round(self.suggestion_confidence(action) * 100),
+                "apply_button": er.async_get(self.hass).async_get_entity_id(
+                    "button", DOMAIN, unique_id
+                ),
+            },
+        )

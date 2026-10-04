@@ -1,4 +1,4 @@
-"""Buttons to make ML Automation predict now or forget what it learned."""
+"""Buttons to apply a suggestion, predict now, or learn afresh."""
 
 from __future__ import annotations
 
@@ -17,7 +17,26 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the buttons."""
-    async_add_entities([PredictNowButton(entry), RelearnButton(entry)])
+    async_add_entities(
+        [ApplySuggestionButton(entry), PredictNowButton(entry), RelearnButton(entry)]
+    )
+
+
+class ApplySuggestionButton(MLAutomationEntity, ButtonEntity):
+    """Does what is currently suggested; unavailable while nothing is."""
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialise the button."""
+        super().__init__(entry, "apply_suggestion")
+
+    @property
+    def available(self) -> bool:
+        """Return whether there is a suggestion to apply."""
+        return self.manager.suggestion is not None
+
+    async def async_press(self) -> None:
+        """Apply the suggestion."""
+        await self.manager.async_apply_suggestion()
 
 
 class PredictNowButton(MLAutomationEntity, ButtonEntity):
@@ -33,7 +52,7 @@ class PredictNowButton(MLAutomationEntity, ButtonEntity):
 
 
 class RelearnButton(MLAutomationEntity, ButtonEntity):
-    """Discards all learned data so the pattern is learned afresh."""
+    """Forgets what was learned and learns again from the last few days."""
 
     _attr_entity_category = EntityCategory.CONFIG
 

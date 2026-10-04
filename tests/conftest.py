@@ -21,6 +21,20 @@ from custom_components.ml_automation.const import (
 )
 from custom_components.ml_automation.learner import SLOT_MINUTES, SLOTS_PER_DAY
 
+# The recorder test fixture inspects the signatures of some recorder functions.
+# On Python 3.14 that evaluates their annotations, which use names the modules
+# only import for type checking. Make those names resolvable.
+from sqlalchemy.orm.session import Session
+
+from homeassistant.components import recorder as _recorder
+from homeassistant.components.recorder import migration as _migration, util as _util
+from homeassistant.helpers import recorder as _recorder_helper
+
+for _module in (_migration, _util, _recorder_helper):
+    for _name, _value in (("Recorder", _recorder.Recorder), ("Session", Session)):
+        if not hasattr(_module, _name):
+            setattr(_module, _name, _value)
+
 TZ = ZoneInfo("Europe/Berlin")
 # A Wednesday, with no daylight saving change in the days before it.
 NOW = datetime(2026, 3, 11, 12, 0, tzinfo=TZ)

@@ -17,7 +17,9 @@ repeats, and then
 - and **never switches it off while it is in use**, e.g. while the TV still
   draws a lot of power.
 
-If your routine changes, press **Re-learn** and it starts from scratch.
+If you'd rather be asked first, switch the automation off: it then only
+**suggests**, and one tap does it. If your routine changes for good, press
+**Re-learn**.
 
 ## Installation
 
@@ -89,22 +91,100 @@ The lamp's own on/off times are learned. Since nothing else shows whether it is
 really in use, it is switched off an hour after the learned time without
 waiting.
 
+## Examples
+
+| You control | It learns from | What you get |
+| --- | --- | --- |
+| The plug of a TV or hi-fi | The plug's power sensor | Powered shortly before you usually watch, standby cut afterwards, never in the middle of a film |
+| The plug of a coffee machine | Its power sensor | Warmed up before your usual first coffee, off after the morning |
+| The plug of a desk, PC or monitor | Its power sensor | On before you usually start working, off once the PC has been idle |
+| The plug of a washing machine or dryer | Its power sensor | Standby cut outside your usual laundry times, never during a cycle |
+| A lamp | The lamp itself | On and off at your usual times |
+| A hallway or bathroom light | A motion sensor | On before the usual morning and evening traffic, off after, never while there is motion |
+| Heating, a water heater or a towel rail | A person or presence sensor | On before you are usually home, off after you usually leave |
+| Blinds | The cover itself | Opened and closed at your usual times |
+| The plug of speakers or an amplifier | A media player | On before you usually listen, off after, never while something plays |
+| A router's guest Wi-Fi switch, a charger, a pump … | Whatever shows that it is in use | The same idea: ready before, off after |
+
+It fits anything that is used at roughly the same times. It does not react to
+events ("motion now → light now") and it does not set values such as
+brightness or temperature.
+
 ## Entities
 
 Each pattern is a device with these entities:
 
 | Entity | Purpose |
 | --- | --- |
-| Status | `Learning`, `Ready`, `Controlling` or `Switch-off postponed` |
+| Status | Where the pattern stands, see below |
+| Suggestion | `Switch on`, `Switch off` or `Nothing`: what you probably want right now |
+| Apply suggestion (button) | Does what is suggested. Unavailable while there is nothing to suggest. |
+| Automation (switch) | On = switches by itself. Off = keeps learning and only suggests. |
 | Next switch-on / Next switch-off | When the controlled entity will be switched next |
 | Learned patterns | Number of habits; the attributes list each with its time, days and confidence |
 | Predicted state | Whether the pattern expects the controlled entity to be on right now; the attribute `probability` is the raw model output |
 | Detected activity | Whether what is learned from is active right now. The attributes show every learning entity and the level that was learned for it. |
 | Days of data | How many complete days the model is built from |
-| Automation (switch) | Off = keep recording and learning, but don't switch anything |
 | Switch on early / Switch off late | The two timings, adjustable from a dashboard |
 | Predict now (button) | Retrain and put the controlled entity into the expected state right away |
-| Re-learn (button) | Forget everything and start learning from scratch |
+| Re-learn (button) | Forget what was learned and learn again from the last 7 days |
+
+### Status
+
+| Status | Meaning |
+| --- | --- |
+| Collecting data | Fewer than 3 complete days are recorded. The attributes show how many there are. |
+| No activity seen yet | There is enough data, but the learning entities were never active in it, e.g. the power never rose above standby. |
+| No regular pattern yet | There was activity, but not at similar times on enough days. |
+| Ready, suggesting only | A pattern was found; the automation is off. |
+| Controlling | A pattern was found and the entity is switched automatically. |
+| Switch-off postponed | It is past the usual time, but the entity is still in use. |
+
+*Next switch-on*, *Next switch-off* and *Predicted state* show "unknown" until
+a pattern was found; there is nothing to show before that.
+
+### Suggestions
+
+A suggestion appears when the pattern calls for switching and the integration
+is not doing it itself, i.e. the automation is off or that direction is
+disabled, and only when the model is at least 70 % sure. Put the *Apply
+suggestion* buttons of your patterns into an entity-filter or conditional card
+and your dashboard shows them only when there is something to suggest.
+
+Every new suggestion also fires the event `ml_automation_suggestion` with
+`name`, `entity_id`, `suggestion` (`switch_on` / `switch_off`), `confidence`
+and `apply_button`. That is enough to send it to your phone with a button; an
+example to adapt (untested, replace the notify service):
+
+```yaml
+automation:
+  - alias: "ML Automation: suggestions on my phone"
+    mode: parallel
+    triggers:
+      - trigger: event
+        event_type: ml_automation_suggestion
+    actions:
+      - action: notify.mobile_app_my_phone
+        data:
+          title: "{{ trigger.event.data.name }}"
+          message: >-
+            {{ 'Switch on now?' if trigger.event.data.suggestion == 'switch_on'
+               else 'Switch off now?' }}
+          data:
+            actions:
+              - action: "ML_APPLY_{{ trigger.event.data.entry_id }}"
+                title: "Yes"
+      - wait_for_trigger:
+          - trigger: event
+            event_type: mobile_app_notification_action
+            event_data:
+              action: "ML_APPLY_{{ trigger.event.data.entry_id }}"
+        timeout: "01:00:00"
+        continue_on_timeout: false
+      - action: button.press
+        target:
+          entity_id: "{{ trigger.event.data.apply_button }}"
+```
 
 ## How it learns
 
@@ -138,10 +218,10 @@ What follows from that:
 - **Recent days count more.** Only the last 28 days are kept, and within them a
   day's influence halves every 14 days. Slow changes, like watching longer in
   winter, are followed automatically. For sudden changes there is the
-  **Re-learn** button.
+  **Re-learn** button, which starts over from the last 7 days only.
 - **Head start:** when a pattern is added, the recorder history of the
-  learning entities is used, so there is usually enough data right away.
-  Re-learn does not do that; it really starts empty.
+  learning entities is used, so there is usually enough data right away. Home
+  Assistant keeps 10 days of history by default.
 - **Gaps are gaps.** Times at which Home Assistant was not running are left
   out, not counted as "not in use".
 - **Today doesn't count yet.** The model is retrained at midnight on complete
@@ -165,7 +245,7 @@ sensor.
 - A power sensor is the best thing to learn from, because it shows real use.
   A device learned only from itself is, once the integration is in control,
   switched by the integration; shifts in your routine are then only picked up
-  when you switch it yourself at other times, or after a Re-learn.
+  when you switch it yourself at other times.
 - Until there is enough data to tell days apart (about two weeks for
   workdays versus weekend), all days are treated alike.
 - Nothing is switched if Home Assistant was not running at the time; press

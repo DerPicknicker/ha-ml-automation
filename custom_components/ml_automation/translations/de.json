@@ -63,6 +63,9 @@
       }
     },
     "button": {
+      "apply_suggestion": {
+        "name": "Vorschlag ausführen"
+      },
       "predict_now": {
         "name": "Jetzt vorhersagen"
       },
@@ -82,8 +85,10 @@
       "status": {
         "name": "Status",
         "state": {
-          "learning": "Lernt",
-          "ready": "Bereit",
+          "collecting": "Sammelt Daten",
+          "no_activity": "Noch keine Aktivität gesehen",
+          "no_pattern": "Noch kein regelmäßiges Muster",
+          "ready": "Bereit, schlägt nur vor",
           "controlling": "Steuert",
           "postponed": "Ausschalten aufgeschoben"
         }
@@ -99,6 +104,14 @@
       },
       "days_of_data": {
         "name": "Tage mit Daten"
+      },
+      "suggestion": {
+        "name": "Vorschlag",
+        "state": {
+          "none": "Nichts",
+          "switch_on": "Einschalten",
+          "switch_off": "Ausschalten"
+        }
       }
     },
     "switch": {

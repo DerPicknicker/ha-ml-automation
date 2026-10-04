@@ -89,9 +89,35 @@ TARGET_OFF_STATES = frozenset({"off", "standby", "closed"})
 # Give up waiting for the controlled entity to become unused after this long.
 PENDING_OFF_MAX_HOURS = 12
 
+# Re-learn forgets everything and starts over from this many recent days.
+RELEARN_DAYS = 7
+
+# A suggestion is only made when the model is at least this sure.
+SUGGESTION_CONFIDENCE = 0.7
+EVENT_SUGGESTION = f"{DOMAIN}_suggestion"
+SUGGESTION_NONE = "none"
+SUGGESTION_ON = "switch_on"
+SUGGESTION_OFF = "switch_off"
+SUGGESTIONS = [SUGGESTION_NONE, SUGGESTION_ON, SUGGESTION_OFF]
+
 # --- Status values ------------------------------------------------------
-STATUS_LEARNING = "learning"
+# Not enough complete days recorded yet.
+STATUS_COLLECTING = "collecting"
+# Enough days, but the learning entities were never active in them.
+STATUS_NO_ACTIVITY = "no_activity"
+# There was activity, but not at regular times.
+STATUS_NO_PATTERN = "no_pattern"
+# A pattern was found; the integration only suggests.
 STATUS_READY = "ready"
+# A pattern was found and the integration switches by itself.
 STATUS_CONTROLLING = "controlling"
+# A switch-off is waiting for the controlled entity to become unused.
 STATUS_POSTPONED = "postponed"
-STATUSES = [STATUS_LEARNING, STATUS_READY, STATUS_CONTROLLING, STATUS_POSTPONED]
+STATUSES = [
+    STATUS_COLLECTING,
+    STATUS_NO_ACTIVITY,
+    STATUS_NO_PATTERN,
+    STATUS_READY,
+    STATUS_CONTROLLING,
+    STATUS_POSTPONED,
+]

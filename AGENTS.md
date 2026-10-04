@@ -64,6 +64,15 @@ validation. All three must pass.
    time (on) and the off delay (off). The tick every minute executes what is
    due.
 
+With the automation switch off (or one direction disabled) nothing is switched;
+`manager.suggestion` then reports the switching the pattern calls for, the
+*Apply suggestion* button does it, and `ml_automation_suggestion` is fired once
+per new suggestion.
+
+The status sensor has to explain itself: when nothing was learned it says
+whether data, activity or regularity is missing. Keep that true when adding
+reasons for the model to come up empty.
+
 Three entity roles, all derived from the two config fields:
 
 - **learn entities**: everything that is recorded.

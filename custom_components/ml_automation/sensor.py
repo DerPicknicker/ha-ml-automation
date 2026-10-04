@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import STATUSES
+from .const import STATUSES, SUGGESTION_NONE, SUGGESTION_OFF, SUGGESTION_ON, SUGGESTIONS
 from .entity import MLAutomationEntity
 from .learner import KIND_OFF, KIND_ON, WEEKDAYS, Habit
 from .manager import MLAutomationConfigEntry
@@ -26,6 +26,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             StatusSensor(entry),
+            SuggestionSensor(entry),
             NextActionSensor(entry, KIND_ON),
             NextActionSensor(entry, KIND_OFF),
             PatternsSensor(entry),
@@ -57,9 +58,42 @@ class StatusSensor(MLAutomationEntity, SensorEntity):
             "control_entity": self.manager.control_entity,
             "learn_entities": self.manager.learn_entities,
             "in_use": self.manager.in_use,
+            "days_of_data": self.manager.days_of_data,
+            "days_required": self.manager.min_days,
             "last_action": last["kind"] if last else None,
             "last_action_time": (
                 dt_util.utc_from_timestamp(last["ts"]) if last else None
+            ),
+        }
+
+
+class SuggestionSensor(MLAutomationEntity, SensorEntity):
+    """What the user probably wants done right now."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = SUGGESTIONS
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialise the sensor."""
+        super().__init__(entry, "suggestion")
+
+    @property
+    def native_value(self) -> str:
+        """Return the suggestion."""
+        if (action := self.manager.suggestion) is None:
+            return SUGGESTION_NONE
+        return SUGGESTION_ON if action.kind == KIND_ON else SUGGESTION_OFF
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return what the suggestion is about and how sure the model is."""
+        action = self.manager.suggestion
+        return {
+            "entity_id": self.manager.control_entity,
+            "confidence": (
+                round(self.manager.suggestion_confidence(action) * 100)
+                if action
+                else None
             ),
         }
 

@@ -25,7 +25,7 @@ python3 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-Python 3.13 is what CI uses. To try a change in a real Home Assistant, copy or
+Python 3.14 is what CI uses, with the newest Home Assistant. To try a change in a real Home Assistant, copy or
 symlink `custom_components/ml_automation` into the `custom_components` folder
 of a development instance and restart it.
 

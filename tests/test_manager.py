@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
+    async_capture_events,
     async_mock_service,
 )
 
@@ -63,12 +64,46 @@ async def test_starts_in_learning_mode(
     hass.states.async_set(PLUG, "on")
     await setup_entry(hass, hass_storage, TV_CONFIG)
 
-    assert _state(hass, "sensor.tv_status") == "learning"
+    status = hass.states.get("sensor.tv_status")
+    assert status.state == "collecting"
+    assert status.attributes["days_of_data"] == 0
+    assert status.attributes["days_required"] == 3
     assert _state(hass, "sensor.tv_learned_patterns") == "0"
     assert _state(hass, "sensor.tv_next_switch_on") == "unknown"
-    # Without data there is no telling what counts as active for a sensor.
-    assert _state(hass, "binary_sensor.tv_detected_activity") == "unknown"
+    # No level is known for the sensor yet, so no activity is detected.
+    assert _state(hass, "binary_sensor.tv_detected_activity") == "off"
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+    assert _state(hass, "button.tv_apply_suggestion") == "unavailable"
     assert _state(hass, "switch.tv_automation") == "on"
+
+    hass.states.async_set(POWER, "unavailable")
+    await _press(hass, "button.tv_predict_now")
+    assert _state(hass, "binary_sensor.tv_detected_activity") == "unknown"
+
+
+async def test_status_says_why_nothing_was_learned(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    hass.states.async_set(POWER, "1.0")
+    hass.states.async_set(PLUG, "on")
+
+    # Ten days in which the TV was never switched on.
+    stored = daily_use(active=1.0)
+    entry = await setup_entry(hass, hass_storage, TV_CONFIG, stored)
+    assert _state(hass, "sensor.tv_status") == "no_activity"
+    await hass.config_entries.async_unload(entry.entry_id)
+
+    # Ten days with the TV on at a different hour every day.
+    stored = daily_use()
+    for index, day in enumerate(sorted(stored["days"])):
+        slots = [1.0] * len(stored["days"][day][POWER])
+        for position in range(slot(8 + index), slot(9 + index)):
+            slots[position] = 90.0
+        stored["days"][day][POWER] = slots
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"]["data"] = stored
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, "sensor.tv_status") == "no_pattern"
 
 
 async def test_always_on_socket_is_learned_from_its_power(
@@ -251,9 +286,10 @@ async def test_relearn_forgets_everything(
     turn_on = async_mock_service(hass, "homeassistant", "turn_on")
     entry = await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
 
+    # There is no recorder in this test, so there is nothing to start over from.
     await _press(hass, "button.tv_re_learn")
 
-    assert _state(hass, "sensor.tv_status") == "learning"
+    assert _state(hass, "sensor.tv_status") == "collecting"
     assert _state(hass, "sensor.tv_learned_patterns") == "0"
     assert entry.runtime_data._days == {}
 
@@ -282,7 +318,7 @@ async def test_learns_from_what_it_records(
     assert recorded[slot(18, 0)] == 90.0
     assert recorded[slot(12, 0)] is None
     # Today is never part of the model.
-    assert _state(hass, "sensor.tv_status") == "learning"
+    assert _state(hass, "sensor.tv_status") == "collecting"
 
     await move_to(hass, freezer, local(0, 0, day=14))
 
@@ -516,3 +552,98 @@ async def test_cover_is_opened_and_closed(
     hass.states.async_set(cover, "open")
     await move_to(hass, freezer, local(20, 0))
     assert len(close_cover) == 1
+
+
+async def test_suggests_instead_of_acting_when_automation_is_off(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    hass.states.async_set(POWER, "0.0")
+    hass.states.async_set(PLUG, "off")
+    turn_on = async_mock_service(hass, "homeassistant", "turn_on")
+    turn_off = async_mock_service(hass, "homeassistant", "turn_off")
+    events = async_capture_events(hass, "ml_automation_suggestion")
+    await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.tv_automation"}, blocking=True
+    )
+
+    # Noon: plug off, and that is what the pattern expects.
+    assert _state(hass, "sensor.tv_status") == "ready"
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+    assert _state(hass, "button.tv_apply_suggestion") == "unavailable"
+
+    # Shortly before the usual TV time nothing is switched, but it is offered.
+    await move_to(hass, freezer, local(17, 45))
+    assert not turn_on
+    suggestion = hass.states.get("sensor.tv_suggestion")
+    assert suggestion.state == "switch_on"
+    assert suggestion.attributes["confidence"] == 100
+    assert suggestion.attributes["entity_id"] == PLUG
+    assert _state(hass, "button.tv_apply_suggestion") != "unavailable"
+    assert len(events) == 1
+    assert events[0].data == {
+        "entry_id": "tv",
+        "name": "TV",
+        "entity_id": PLUG,
+        "suggestion": "switch_on",
+        "confidence": 100,
+        "apply_button": "button.tv_apply_suggestion",
+    }
+
+    # One tap does it, and the suggestion is gone as soon as the plug is on.
+    await _press(hass, "button.tv_apply_suggestion")
+    assert len(turn_on) == 1
+    assert turn_on[0].data[ATTR_ENTITY_ID] == PLUG
+    hass.states.async_set(PLUG, "on")
+    hass.states.async_set(POWER, "90.0")
+    await hass.async_block_till_done()
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+    assert _state(hass, "button.tv_apply_suggestion") == "unavailable"
+
+    # Still watching when it would usually be switched off: no suggestion.
+    await move_to(hass, freezer, local(20, 0))
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+
+    # Done watching: switching off is offered, not done.
+    hass.states.async_set(POWER, "1.0")
+    await move_to(hass, freezer, local(20, 5))
+    assert _state(hass, "sensor.tv_suggestion") == "switch_off"
+    assert not turn_off
+    assert [event.data["suggestion"] for event in events] == ["switch_on", "switch_off"]
+
+    await _press(hass, "button.tv_apply_suggestion")
+    assert len(turn_off) == 1
+
+
+async def test_no_suggestion_once_the_usual_time_is_over(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    hass.states.async_set(POWER, "0.0")
+    hass.states.async_set(PLUG, "off")
+    await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.tv_automation"}, blocking=True
+    )
+
+    await move_to(hass, freezer, local(18, 30))
+    assert _state(hass, "sensor.tv_suggestion") == "switch_on"
+
+    # Usually done by 19:00; the switch-off is only due at 20:00.
+    await move_to(hass, freezer, local(19, 30))
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+
+
+async def test_no_suggestions_while_acting_itself(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    hass.states.async_set(POWER, "0.0")
+    hass.states.async_set(PLUG, "off")
+    turn_on = async_mock_service(hass, "homeassistant", "turn_on")
+    events = async_capture_events(hass, "ml_automation_suggestion")
+    await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
+
+    await move_to(hass, freezer, local(17, 45))
+
+    assert len(turn_on) == 1
+    assert _state(hass, "sensor.tv_suggestion") == "none"
+    assert not events

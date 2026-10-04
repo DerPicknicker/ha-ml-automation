@@ -20,6 +20,10 @@ async def test_history_is_imported(
     hass_storage: dict[str, Any],
     freezer,
 ) -> None:
+    freezer.move_to(local(12, 0, day=2))
+    hass.states.async_set(PLUG, "off")
+    hass.states.async_set(POWER, "0.0")
+    await hass.async_block_till_done()
     freezer.move_to(local(12, 0, day=7))
     hass.states.async_set(PLUG, "on")
     hass.states.async_set(POWER, "1.0")
@@ -49,8 +53,9 @@ async def test_history_is_imported(
     assert recorded[POWER][slot(18, 0)] == 90.0
     assert recorded[POWER][slot(18, 30)] == 77.0
     assert recorded[PLUG][slot(3, 0)] == 1.0
-    # Recording started at noon on the 7th; before that nothing is known.
-    assert manager._days["2026-03-07"][POWER][slot(11, 55)] is None
+    # Recording started at noon on the 2nd; before that nothing is known.
+    assert manager._days["2026-03-02"][POWER][slot(11, 55)] is None
+    assert manager._days["2026-03-02"][POWER][slot(12, 0)] == 0.0
     assert manager._days["2026-03-07"][POWER][slot(12, 0)] == 1.0
     # And nothing is made up for the rest of today.
     assert manager._days["2026-03-11"][POWER][slot(12, 5)] is None
@@ -61,8 +66,15 @@ async def test_history_is_imported(
         ("off", 19 * 60),
     }
 
-    # A reload must not import again; Re-learn would otherwise be undone.
+    # Re-learn starts over from the last week only.
     await manager.async_relearn()
+    assert min(manager._days) == "2026-03-04"
+    assert {(habit.kind, habit.minute) for habit in manager.habits} == {
+        ("on", 18 * 60),
+        ("off", 19 * 60),
+    }
+
+    # A reload must not bring the older days back.
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.runtime_data._days == {}
+    assert min(entry.runtime_data._days) == "2026-03-04"
