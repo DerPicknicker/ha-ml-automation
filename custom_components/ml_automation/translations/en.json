@@ -2,119 +2,55 @@
   "config": {
     "step": {
       "user": {
-        "title": "Learn a new pattern",
-        "description": "Pick the entity whose behaviour should be learned. A power sensor works best, because it shows when a device is really being used.",
+        "title": "What should be controlled?",
+        "description": "Pick the entity that should be switched on and off for you.",
         "data": {
-          "name": "Name",
-          "source_entity": "Entity to learn from"
+          "control_entity": "Entity to control"
         }
       },
-      "source": {
-        "title": "When is it active?",
-        "description": "Define when {entity} counts as active. The times at which it becomes active and inactive are what gets learned.",
+      "learn": {
+        "title": "What should it learn from?",
+        "description": "Pick the entities that show when {entity} is in use. The entity itself is enough; a power sensor is better, because it shows real use even if the entity is always on. There is nothing else to set up: what counts as active is learned from the data.",
         "data": {
-          "active_above": "Active above",
-          "active_states": "Active states",
-          "debounce_seconds": "Ignore changes shorter than"
-        },
-        "data_description": {
-          "active_above": "The entity counts as active while its value is above this.",
-          "active_states": "The entity counts as active while it is in one of these states. You can type your own.",
-          "debounce_seconds": "Filters out short spikes and dips."
-        }
-      },
-      "control": {
-        "title": "What should be switched?",
-        "description": "Leave the entities empty to only learn and predict without switching anything.",
-        "data": {
-          "target_entities": "Entities to switch",
-          "control_on": "Switch on automatically",
-          "lead_minutes": "Switch on this early",
-          "control_off": "Switch off automatically",
-          "off_delay_minutes": "Switch off this late",
-          "guard_entity": "Don't switch off while this is active",
-          "guard_above": "In use above",
-          "guard_grace_minutes": "Switch off after being unused for",
-          "condition_entity": "Only switch on while this is active"
-        },
-        "data_description": {
-          "lead_minutes": "Minutes before the learned switch-on time.",
-          "off_delay_minutes": "Minutes after the learned switch-off time.",
-          "guard_entity": "Optional. If empty, the entity that is learned from is used, unless it is switched itself.",
-          "guard_above": "Optional. For a numeric entity: counts as in use while above this value.",
-          "guard_grace_minutes": "When a switch-off was postponed because of use, it happens once the entity was unused for this long.",
-          "condition_entity": "Optional. For example a person or a presence sensor."
-        }
-      },
-      "learning": {
-        "title": "How should it learn?",
-        "data": {
-          "window_days": "Remember the last",
-          "min_days": "Days of data needed",
-          "min_confidence": "Confidence needed",
-          "import_history": "Start with the existing history"
-        },
-        "data_description": {
-          "window_days": "Older data is forgotten and recent days count more, so the model follows slow changes on its own.",
-          "min_days": "Nothing is predicted before this many complete days were observed. It is also how many days are needed to tell weekdays apart.",
-          "min_confidence": "A period counts as a habit when the model is at least this sure the entity is active.",
-          "import_history": "Uses what the recorder already knows about the entity, so there is no waiting."
+          "learn_entities": "Data to learn from"
         }
       }
+    },
+    "error": {
+      "no_entities": "Pick at least one entity to learn from."
+    },
+    "abort": {
+      "already_configured": "This entity is already controlled by a pattern."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "When is it active?",
-        "description": "Define when {entity} counts as active.",
+        "title": "Settings",
         "data": {
-          "active_above": "Active above",
-          "active_states": "Active states",
-          "debounce_seconds": "Ignore changes shorter than"
-        },
-        "data_description": {
-          "active_above": "The entity counts as active while its value is above this.",
-          "active_states": "The entity counts as active while it is in one of these states. You can type your own.",
-          "debounce_seconds": "Filters out short spikes and dips."
-        }
-      },
-      "control": {
-        "title": "What should be switched?",
-        "description": "Leave the entities empty to only learn and predict without switching anything.",
-        "data": {
-          "target_entities": "Entities to switch",
+          "learn_entities": "Data to learn from",
           "control_on": "Switch on automatically",
           "lead_minutes": "Switch on this early",
           "control_off": "Switch off automatically",
           "off_delay_minutes": "Switch off this late",
-          "guard_entity": "Don't switch off while this is active",
-          "guard_above": "In use above",
           "guard_grace_minutes": "Switch off after being unused for",
-          "condition_entity": "Only switch on while this is active"
-        },
-        "data_description": {
-          "lead_minutes": "Minutes before the learned switch-on time.",
-          "off_delay_minutes": "Minutes after the learned switch-off time.",
-          "guard_entity": "Optional. If empty, the entity that is learned from is used, unless it is switched itself.",
-          "guard_above": "Optional. For a numeric entity: counts as in use while above this value.",
-          "guard_grace_minutes": "When a switch-off was postponed because of use, it happens once the entity was unused for this long.",
-          "condition_entity": "Optional. For example a person or a presence sensor."
-        }
-      },
-      "learning": {
-        "title": "How should it learn?",
-        "data": {
           "window_days": "Remember the last",
           "min_days": "Days of data needed",
           "min_confidence": "Confidence needed"
         },
         "data_description": {
+          "learn_entities": "The controlled entity counts as in use while any of these is active. For numeric sensors, what counts as active is worked out from the data.",
+          "lead_minutes": "Minutes before the learned start of use.",
+          "off_delay_minutes": "Minutes after the learned end of use.",
+          "guard_grace_minutes": "The entity is never switched off while in use. Once it has been unused for this long, a postponed switch-off happens.",
           "window_days": "Older data is forgotten and recent days count more, so the model follows slow changes on its own.",
           "min_days": "Nothing is predicted before this many complete days were observed. It is also how many days are needed to tell weekdays apart.",
-          "min_confidence": "A period counts as a habit when the model is at least this sure the entity is active."
+          "min_confidence": "A period counts as a habit when the model is at least this sure there is use."
         }
       }
+    },
+    "error": {
+      "no_entities": "Pick at least one entity to learn from."
     }
   },
   "entity": {

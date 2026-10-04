@@ -16,7 +16,7 @@ body:
       options:
         - Learning / the model
         - Switching on and off
-        - In-use guard and conditions
+        - Detecting activity / learning data
         - Setup and options
         - Entities and dashboard
         - Documentation

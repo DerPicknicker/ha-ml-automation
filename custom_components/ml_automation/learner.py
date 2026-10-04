@@ -4,24 +4,28 @@ This module is deliberately free of Home Assistant imports and of third party
 dependencies, so the learning logic can be reasoned about and tested on its
 own, and installs on every Home Assistant system.
 
-The model is a small random forest. Every observed day is cut into slots of a
-few minutes, and each slot is labelled "active" or "not active". Decision trees
-then learn to predict that label from the time of day and the day of the week.
-Each tree is grown on a random selection of the observed days in which recent
-days are more likely to be picked, so the forest follows changing routines.
+What is recorded is, for every learning entity, one value per slot of a few
+minutes: the mean of a numeric state, or the share of the slot an on/off-like
+entity was on. Learning then happens in three steps:
 
-Averaging the trees yields the probability of the entity being active for every
-slot of the week. Where that probability crosses the confidence threshold, a
-period of activity starts or ends; these crossings are the *habits* the
-integration acts on.
+1. For numeric entities a threshold between "idle" and "active" is derived
+   from the values themselves, so nobody has to enter one.
+2. A slot counts as *in use* if any learning entity was active in it. A small
+   random forest learns to predict that from the time of day and the weekday.
+   Each tree is grown on a random selection of the observed days in which
+   recent days are more likely to be picked, so the forest follows changing
+   routines.
+3. Averaging the trees yields the probability of use for every slot of the
+   week. Where it crosses the confidence threshold, a period of use starts or
+   ends; these crossings are the *habits* the integration acts on.
 """
 
 from __future__ import annotations
 
 from bisect import bisect_right
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, tzinfo
 import random
 
@@ -48,6 +52,16 @@ MIN_RUN_SLOTS = 2
 _FEATURE_SLOT = 0
 _FEATURE_WEEKDAY = 1
 _MIN_GAIN = 1e-9
+
+# A numeric entity needs this many recorded slots before a threshold is trusted,
+MIN_THRESHOLD_SAMPLES = 36
+# and the split into idle and active has to explain this share of the variance.
+MIN_SEPARATION = 0.6
+# On/off-like entities are recorded as the share of a slot they were on.
+STATE_THRESHOLD = 0.5
+
+KIND_NUMERIC = "numeric"
+KIND_STATE = "state"
 
 # slot, weekday, number of days, number of days on which the slot was active
 type _Row = tuple[int, int, int, int]
@@ -78,61 +92,76 @@ class Action:
     habit_time: datetime
 
 
-def extract_transitions(
-    samples: Sequence[tuple[datetime, bool | None]], debounce_seconds: float
-) -> list[tuple[datetime, bool]]:
-    """Turn a series of (time, active) samples into debounced transitions.
+def learn_threshold(values: Iterable[float]) -> float | None:
+    """Find the value that separates "idle" from "active" in numeric data.
 
-    A change only counts if the new value held for at least `debounce_seconds`.
-    Samples with an unknown value (None) are skipped. The value of the first
-    sample is the starting point and does not produce a transition.
+    This is Otsu's method: try every split of the sorted values and keep the
+    one where the two sides differ most. Returns None if the data does not
+    fall into two clearly different levels, e.g. a temperature that just
+    drifts; such an entity then never counts as active.
     """
-    runs: list[tuple[datetime, bool]] = []
-    for when, value in samples:
-        if value is None:
+    data = sorted(values)
+    size = len(data)
+    if size < MIN_THRESHOLD_SAMPLES:
+        return None
+    total = sum(data)
+    mean = total / size
+    variance = sum((value - mean) ** 2 for value in data)
+    if variance <= 0:
+        return None
+
+    best_between = 0.0
+    best: tuple[int, float, float] | None = None
+    left_sum = 0.0
+    for index in range(1, size):
+        left_sum += data[index - 1]
+        if data[index] == data[index - 1]:
             continue
-        if not runs or runs[-1][1] != value:
-            runs.append((when, value))
+        low = left_sum / index
+        high = (total - left_sum) / (size - index)
+        between = index * (size - index) * (high - low) ** 2 / size
+        if between > best_between:
+            best_between = between
+            best = (index, low, high)
 
-    if not runs:
-        return []
-
-    transitions: list[tuple[datetime, bool]] = []
-    confirmed = runs[0][1]
-    for index, (start, value) in enumerate(runs[1:], start=1):
-        if value == confirmed:
-            continue
-        if index + 1 < len(runs):
-            duration = (runs[index + 1][0] - start).total_seconds()
-            if duration < debounce_seconds:
-                continue
-        confirmed = value
-        transitions.append((start, value))
-    return transitions
+    if best is None or best_between / variance < MIN_SEPARATION:
+        return None
+    index, low, high = best
+    # "Active" has to be a different level, not the upper half of some noise.
+    if high - low <= abs(low):
+        return None
+    return (data[index - 1] + data[index]) / 2
 
 
-def day_occupancy(
+def slots_from_timeline(
     day: date,
     tz: tzinfo,
     timestamps: Sequence[float],
-    states: Sequence[bool],
-    initial: bool,
-) -> tuple[bool, ...]:
-    """Label every slot of a day as active or not.
+    values: Sequence[float | None],
+    until: float,
+) -> list[float | None]:
+    """Compute the slot values of a day from a history of state changes.
 
-    `timestamps` and `states` describe the transitions in ascending order;
-    `initial` is the state before the first of them. A slot gets the state
-    that held at its midpoint.
+    Mirrors what is recorded live: the state is sampled once a minute and the
+    samples of a slot are averaged. Slots before the first known state or
+    after `until` stay None.
     """
-    occupancy = []
+    slots: list[float | None] = []
     for slot in range(SLOTS_PER_DAY):
-        minute = slot * SLOT_MINUTES + SLOT_MINUTES // 2
-        midpoint = datetime.combine(
-            day, time(minute // 60, minute % 60, 30), tzinfo=tz
+        minute = slot * SLOT_MINUTES
+        start = datetime.combine(
+            day, time(minute // 60, minute % 60), tzinfo=tz
         ).timestamp()
-        index = bisect_right(timestamps, midpoint)
-        occupancy.append(states[index - 1] if index else initial)
-    return tuple(occupancy)
+        samples = []
+        for offset in range(SLOT_MINUTES):
+            moment = start + offset * 60
+            if moment > until:
+                break
+            index = bisect_right(timestamps, moment)
+            if index and (value := values[index - 1]) is not None:
+                samples.append(value)
+        slots.append(sum(samples) / len(samples) if samples else None)
+    return slots
 
 
 class _Node:
@@ -246,7 +275,7 @@ class Forest:
 
 
 def train_forest(
-    occupancy: Mapping[date, Sequence[bool]],
+    occupancy: Mapping[date, Sequence[bool | None]],
     *,
     today: date,
     half_life_days: float,
@@ -257,10 +286,16 @@ def train_forest(
 ) -> Forest | None:
     """Train a forest on the observed days, or return None if there are too few.
 
-    A day's chance of being drawn for a tree halves every `half_life_days`.
-    Weekdays are only told apart if at least `min_days` days back both sides.
+    Slots whose state is unknown (None) are left out rather than counted as
+    idle. A day's chance of being drawn for a tree halves every
+    `half_life_days`. Weekdays are only told apart if at least `min_days` days
+    back both sides.
     """
-    days = sorted(occupancy)
+    known_slots = {
+        day: [slot for slot, active in enumerate(slots) if active is not None]
+        for day, slots in occupancy.items()
+    }
+    days = sorted(day for day, slots in known_slots.items() if slots)
     if not days or len(days) < min_days:
         return None
 
@@ -274,18 +309,19 @@ def train_forest(
     rng = random.Random(seed)
     roots = []
     for _ in range(trees):
-        count = [0] * DAYS_PER_WEEK
+        count = [[0] * SLOTS_PER_DAY for _ in range(DAYS_PER_WEEK)]
         active = [[0] * SLOTS_PER_DAY for _ in range(DAYS_PER_WEEK)]
         for day in rng.choices(days, weights=weights, k=len(days)):
             weekday = day.weekday()
-            count[weekday] += 1
+            for slot in known_slots[day]:
+                count[weekday][slot] += 1
             for slot in active_slots[day]:
                 active[weekday][slot] += 1
         rows = [
-            (slot, weekday, count[weekday], active[weekday][slot])
+            (slot, weekday, count[weekday][slot], active[weekday][slot])
             for weekday in range(DAYS_PER_WEEK)
-            if count[weekday]
             for slot in range(SLOTS_PER_DAY)
+            if count[weekday][slot]
         ]
         roots.append(_grow(rows, 0, max_depth, min_days, days_per_weekday))
     return Forest(roots, len(days))
@@ -342,29 +378,70 @@ def find_habits(profile: Sequence[Sequence[float]], threshold: float) -> list[Ha
     return habits
 
 
+@dataclass(frozen=True, slots=True)
+class Model:
+    """Everything that was learned from the recorded data."""
+
+    forest: Forest | None = None
+    habits: list[Habit] = field(default_factory=list)
+    thresholds: dict[str, float | None] = field(default_factory=dict)
+
+
 def learn(
-    observed_days: Iterable[date],
-    tz: tzinfo,
-    timestamps: Sequence[float],
-    states: Sequence[bool],
-    initial: bool,
+    days: Mapping[date, Mapping[str, Sequence[float | None]]],
+    kinds: Mapping[str, str],
+    label_entities: Sequence[str],
+    ignored: Mapping[date, Collection[int]],
     *,
     today: date,
     half_life_days: float,
     min_days: int,
-    threshold: float,
-) -> tuple[Forest | None, list[Habit]]:
-    """Train the model on the observed days and derive the habits from it."""
-    occupancy = {
-        day: day_occupancy(day, tz, timestamps, states, initial)
-        for day in observed_days
-    }
+    confidence: float,
+) -> Model:
+    """Learn thresholds, train the forest and derive the habits.
+
+    `days` holds the recorded slot values per day and entity, `kinds` says
+    which entities are numeric. A slot is in use if any of `label_entities`
+    was active in it; slots listed in `ignored` are never in use, because the
+    activity in them was the integration's own doing. Only days before
+    `today` are trained on.
+    """
+    thresholds: dict[str, float | None] = {}
+    for entity, kind in kinds.items():
+        if kind == KIND_NUMERIC:
+            thresholds[entity] = learn_threshold(
+                value
+                for slots in days.values()
+                for value in slots.get(entity, ())
+                if value is not None
+            )
+        else:
+            thresholds[entity] = STATE_THRESHOLD
+
+    occupancy: dict[date, list[bool | None]] = {}
+    for day, slots_by_entity in days.items():
+        if day >= today:
+            continue
+        skip = ignored.get(day, ())
+        in_use: list[bool | None] = [None] * SLOTS_PER_DAY
+        for entity in label_entities:
+            threshold = thresholds.get(entity)
+            for slot, value in enumerate(slots_by_entity.get(entity, ())):
+                if value is None:
+                    continue
+                active = threshold is not None and value >= threshold
+                in_use[slot] = bool(in_use[slot]) or active
+        for slot in skip:
+            if in_use[slot] is not None:
+                in_use[slot] = False
+        occupancy[day] = in_use
+
     forest = train_forest(
         occupancy, today=today, half_life_days=half_life_days, min_days=min_days
     )
     if forest is None:
-        return None, []
-    return forest, find_habits(forest.weekly_profile(), threshold)
+        return Model(thresholds=thresholds)
+    return Model(forest, find_habits(forest.weekly_profile(), confidence), thresholds)
 
 
 def upcoming_actions(

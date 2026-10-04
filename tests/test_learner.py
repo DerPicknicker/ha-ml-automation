@@ -5,14 +5,17 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from custom_components.ml_automation.learner import (
+    KIND_NUMERIC,
     KIND_OFF,
     KIND_ON,
+    KIND_STATE,
     SLOT_MINUTES,
     SLOTS_PER_DAY,
     Habit,
-    day_occupancy,
-    extract_transitions,
     find_habits,
+    learn,
+    learn_threshold,
+    slots_from_timeline,
     train_forest,
     upcoming_actions,
 )
@@ -188,38 +191,148 @@ def test_find_habits_wraps_around_the_week() -> None:
     ]
 
 
-def test_day_occupancy() -> None:
+def test_unknown_slots_are_not_counted_as_idle() -> None:
+    # Home Assistant was only running in the evening on most days.
+    evening_only = tuple(
+        value if 17 * 12 <= index < 20 * 12 else None
+        for index, value in enumerate(_day((18, 19)))
+    )
+    days = [evening_only] * 6 + [_day((18, 19), (8, 9))]
+
+    # The morning was seen once, and it was active then.
+    assert _times(_learn(days, min_days=1)) == {
+        (KIND_ON, 8 * 60),
+        (KIND_OFF, 9 * 60),
+        (KIND_ON, 18 * 60),
+        (KIND_OFF, 19 * 60),
+    }
+
+
+def test_threshold_separates_standby_from_use() -> None:
+    standby = [0.8, 1.0, 1.2] * 100
+    watching = [70.0, 90.0, 110.0] * 10
+
+    threshold = learn_threshold(standby + watching)
+
+    assert threshold is not None
+    assert 1.2 < threshold < 70.0
+
+
+def test_threshold_picks_the_high_level_of_three() -> None:
+    # Socket off, device in standby, device in use.
+    values = [0.0] * 200 + [5.0] * 100 + [100.0] * 40
+
+    assert learn_threshold(values) == 52.5
+
+
+def test_no_threshold_without_two_levels() -> None:
+    # Constant, too little data, or just drifting like a temperature.
+    assert learn_threshold([1.0] * 500) is None
+    assert learn_threshold([1.0, 90.0] * 5) is None
+    assert learn_threshold([20.0 + index % 30 / 10 for index in range(900)]) is None
+
+
+def test_slots_from_timeline() -> None:
     def ts(hour: int, minute: int = 0) -> float:
         return datetime(2026, 3, 2, hour, minute, tzinfo=timezone.utc).timestamp()
 
-    occupancy = day_occupancy(
-        MONDAY, timezone.utc, [ts(18), ts(19), ts(23, 30)], [True, False, True], False
+    slots = slots_from_timeline(
+        MONDAY,
+        timezone.utc,
+        [ts(6), ts(18), ts(18, 2), ts(19), ts(20)],
+        [1.0, 91.0, 101.0, None, 1.0],
+        ts(21),
     )
 
-    assert occupancy == _day((18, 19))[: 23 * 12 + 6] + (True,) * 6
-    # Without any transition the initial state holds all day.
-    assert day_occupancy(MONDAY, timezone.utc, [], [], True) == _day((0, 24))
+    assert slots[5 * 12 + 11] is None  # nothing known before 06:00
+    assert slots[6 * 12] == 1.0
+    assert slots[18 * 12] == 97.0  # two minutes at 91, three at 101
+    assert slots[19 * 12] is None  # unavailable
+    assert slots[20 * 12] == 1.0
+    assert slots[21 * 12] == 1.0  # 21:00 itself is the last sample
+    assert slots[21 * 12 + 1] is None  # the future
 
 
-def test_extract_transitions_debounces() -> None:
-    start = datetime(2026, 3, 2, 18, 0, tzinfo=timezone.utc)
+def _recorded(**entities: tuple[bool, ...]) -> dict[str, list[float]]:
+    """Slot values as they are recorded: watts for power, 0/1 for the rest."""
+    return {
+        entity: [
+            (90.0 if active else 1.0) if entity == "power" else float(active)
+            for active in slots
+        ]
+        for entity, slots in entities.items()
+    }
 
-    def at(seconds: int) -> datetime:
-        return start + timedelta(seconds=seconds)
 
-    samples = [
-        (at(0), False),
-        (at(100), True),  # 10 s spike
-        (at(110), False),
-        (at(200), None),  # unavailable
-        (at(300), True),  # real switch-on
-        (at(320), True),
-        (at(1000), False),  # last change always counts
-    ]
+def _run_learn(days, labels, ignored=None, kinds=None):
+    return learn(
+        {MONDAY + timedelta(days=index): data for index, data in enumerate(days)},
+        kinds or {"power": KIND_NUMERIC, "player": KIND_STATE, "plug": KIND_STATE},
+        labels,
+        ignored or {},
+        today=MONDAY + timedelta(days=len(days)),
+        half_life_days=14,
+        min_days=3,
+        confidence=0.5,
+    )
 
-    assert extract_transitions(samples, 60) == [(at(300), True), (at(1000), False)]
-    assert len(extract_transitions(samples, 0)) == 4
-    assert extract_transitions([], 60) == []
+
+def test_learn_finds_threshold_and_habits() -> None:
+    always_on = _day((0, 24))
+    days = [_recorded(power=_day((18, 19)), plug=always_on)] * 7
+
+    model = _run_learn(days, ["power"])
+
+    assert model.thresholds == {"power": 45.5, "player": 0.5, "plug": 0.5}
+    assert _times(model.habits) == {(KIND_ON, 18 * 60), (KIND_OFF, 19 * 60)}
+    # Learning from the always-on plug instead finds nothing to act on.
+    assert _run_learn(days, ["plug"]).habits == []
+
+
+def test_learn_combines_entities() -> None:
+    days = [_recorded(power=_day((18, 19)), player=_day((20, 21)))] * 7
+
+    model = _run_learn(days, ["power", "player"])
+
+    assert _times(model.habits) == {
+        (KIND_ON, 18 * 60),
+        (KIND_OFF, 19 * 60),
+        (KIND_ON, 20 * 60),
+        (KIND_OFF, 21 * 60),
+    }
+
+
+def test_learn_skips_ignored_slots_and_today() -> None:
+    days = [_recorded(player=_day((17, 19)))] * 7
+    ignored = {
+        MONDAY + timedelta(days=index): range(17 * 12, 18 * 12) for index in range(7)
+    }
+
+    model = _run_learn(days, ["player"], ignored)
+
+    assert _times(model.habits) == {(KIND_ON, 18 * 60), (KIND_OFF, 19 * 60)}
+
+    # A day that is not over yet is not trained on.
+    forest = learn(
+        {MONDAY + timedelta(days=index): data for index, data in enumerate(days)},
+        {"player": KIND_STATE},
+        ["player"],
+        {},
+        today=MONDAY + timedelta(days=2),
+        half_life_days=14,
+        min_days=3,
+        confidence=0.5,
+    ).forest
+    assert forest is None
+
+
+def test_numeric_entity_without_threshold_is_never_active() -> None:
+    days = [{"power": [21.0 + index % 7 / 10 for index in range(SLOTS_PER_DAY)]}] * 7
+
+    model = _run_learn(days, ["power"], kinds={"power": KIND_NUMERIC})
+
+    assert model.thresholds == {"power": None}
+    assert model.habits == []
 
 
 def test_upcoming_actions_apply_lead_and_delay() -> None:

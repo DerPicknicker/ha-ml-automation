@@ -49,24 +49,29 @@ body:
       label: What is affected?
       options:
         - Learning (wrong, missing or unexpected patterns)
+        - Detecting activity (wrong or missing "active above" level)
         - Switching on
-        - Switching off / in-use guard
+        - Switching off / not switching off while in use
         - Setup or configuration dialog
         - Entities (sensors, buttons, switch, numbers)
         - History import
         - Something else
     validations:
       required: true
-  - type: dropdown
-    id: source_type
+  - type: input
+    id: control_entity
     attributes:
-      label: What does the pattern learn from?
-      options:
-        - Power or other numeric sensor
-        - Switch, light or input boolean
-        - Media player
-        - Person, presence or other binary sensor
-        - Something else
+      label: What is controlled?
+      description: The kind of entity is enough, e.g. "smart plug (switch)", "light", "media player".
+      placeholder: smart plug (switch)
+    validations:
+      required: true
+  - type: input
+    id: learn_entities
+    attributes:
+      label: What does it learn from?
+      description: The kinds of entities, e.g. "the plug itself and its power sensor".
+      placeholder: the plug itself and its power sensor
     validations:
       required: true
   - type: textarea
@@ -88,7 +93,7 @@ body:
       label: How can it be reproduced?
       description: If it happens every day, say so. If it happened once, describe what was different that day.
       placeholder: |
-        1. Pattern learns from sensor.tv_power, active above 20 W, switches switch.tv_plug
+        1. Pattern controls switch.tv_plug and learns from sensor.tv_plug_power
         2. ...
     validations:
       required: true
@@ -98,7 +103,7 @@ body:
       label: Diagnostics
       description: |
         Settings → Devices & services → ML Automation → ⋮ on the affected pattern → Download diagnostics.
-        Drag the file in here. It contains the settings, the learned habits and the model state; check it for anything you don't want to share.
+        Drag the file in here. It contains the settings, the learned activity levels, the habits and the model state; check it for anything you don't want to share.
     validations:
       required: true
   - type: textarea

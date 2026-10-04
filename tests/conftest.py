@@ -15,15 +15,11 @@ from pytest_homeassistant_custom_component.common import (
 from homeassistant.core import HomeAssistant
 
 from custom_components.ml_automation.const import (
-    CONF_ACTIVE_ABOVE,
-    CONF_DEBOUNCE_SECONDS,
-    CONF_IMPORT_HISTORY,
-    CONF_SOURCE_ENTITY,
-    CONF_SOURCE_MODE,
-    CONF_TARGET_ENTITIES,
+    CONF_CONTROL_ENTITY,
+    CONF_LEARN_ENTITIES,
     DOMAIN,
-    MODE_NUMERIC,
 )
+from custom_components.ml_automation.learner import SLOT_MINUTES, SLOTS_PER_DAY
 
 TZ = ZoneInfo("Europe/Berlin")
 # A Wednesday, with no daylight saving change in the days before it.
@@ -31,15 +27,12 @@ NOW = datetime(2026, 3, 11, 12, 0, tzinfo=TZ)
 
 POWER = "sensor.tv_power"
 PLUG = "switch.tv_plug"
+LAMP = "light.lamp"
 
-TV_CONFIG = {
-    CONF_SOURCE_ENTITY: POWER,
-    CONF_SOURCE_MODE: MODE_NUMERIC,
-    CONF_ACTIVE_ABOVE: 20.0,
-    CONF_DEBOUNCE_SECONDS: 0,
-    CONF_TARGET_ENTITIES: [PLUG],
-    CONF_IMPORT_HISTORY: False,
-}
+# A TV on a smart plug that is always on; its power shows when it is used.
+TV_CONFIG = {CONF_CONTROL_ENTITY: PLUG, CONF_LEARN_ENTITIES: [PLUG, POWER]}
+# A lamp with nothing to learn from but itself.
+LAMP_CONFIG = {CONF_CONTROL_ENTITY: LAMP, CONF_LEARN_ENTITIES: [LAMP]}
 
 
 @pytest.fixture
@@ -60,20 +53,38 @@ def local(hour: int, minute: int = 0, *, day: int = NOW.day) -> datetime:
     return datetime(NOW.year, NOW.month, day, hour, minute, tzinfo=TZ)
 
 
-def daily_events(days: int = 10, on: int = 18, off: int = 19) -> dict[str, Any]:
-    """Stored data of someone who used the device at the same time every day."""
-    events = []
-    observed = []
+def slot(hour: int, minute: int = 0) -> int:
+    """Return the slot a time of day falls into."""
+    return (hour * 60 + minute) // SLOT_MINUTES
+
+
+def daily_use(
+    entity: str = POWER,
+    *,
+    idle: float = 1.0,
+    active: float = 90.0,
+    days: int = 10,
+    on: int = 18,
+    off: int = 19,
+) -> dict[str, Any]:
+    """Stored data of something that was used at the same time every day."""
+    numeric = entity == POWER
+    if not numeric:
+        idle, active = 0.0, 1.0
+    slots = [active if slot(on) <= index < slot(off) else idle for index in range(SLOTS_PER_DAY)]
+    recorded: dict[str, dict[str, list[float]]] = {}
     for offset in range(1, days + 1):
-        day = (NOW - timedelta(days=offset)).date()
-        observed.append(day.isoformat())
-        for hour, kind in ((on, "on"), (off, "off")):
-            when = datetime(day.year, day.month, day.day, hour, tzinfo=TZ)
-            events.append({"ts": when.timestamp(), "kind": kind})
+        day = (NOW - timedelta(days=offset)).date().isoformat()
+        recorded[day] = {entity: list(slots)}
+        if numeric:
+            # The plug itself was on all the time.
+            recorded[day][PLUG] = [1.0] * SLOTS_PER_DAY
+    kinds = {POWER: "numeric", PLUG: "state"} if numeric else {entity: "state"}
     return {
-        "events": events,
-        "observed_days": observed,
-        "history_imported": True,
+        "days": recorded,
+        "ignored": {},
+        "kinds": kinds,
+        "imported": sorted(kinds),
         "enabled": True,
     }
 
@@ -83,9 +94,17 @@ async def setup_entry(
     hass_storage: dict[str, Any],
     config: dict[str, Any],
     stored: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> MockConfigEntry:
-    """Set up a config entry, optionally with previously learned data."""
-    entry = MockConfigEntry(domain=DOMAIN, title="TV", data=config, entry_id="tv")
+    """Set up a config entry, optionally with previously recorded data."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="TV",
+        data=config,
+        options=options or {},
+        entry_id="tv",
+        version=2,
+    )
     if stored is not None:
         key = f"{DOMAIN}.{entry.entry_id}"
         hass_storage[key] = {"version": 1, "key": key, "data": stored}
@@ -101,3 +120,13 @@ async def move_to(hass: HomeAssistant, freezer, when: datetime) -> None:
     async_fire_time_changed(hass, when)
     # The minutely tick may retrain the model in the executor.
     await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def run_minutes(
+    hass: HomeAssistant, freezer, start: datetime, end: datetime
+) -> None:
+    """Let every minute from start to end (inclusive) tick."""
+    when = start
+    while when <= end:
+        await move_to(hass, freezer, when)
+        when += timedelta(minutes=1)

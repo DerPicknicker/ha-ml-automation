@@ -1,4 +1,4 @@
-"""Tests for seeding the model from the recorder."""
+"""Tests for seeding the recording from the recorder."""
 
 from __future__ import annotations
 
@@ -10,12 +10,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.ml_automation.const import (
-    CONF_DEBOUNCE_SECONDS,
-    CONF_IMPORT_HISTORY,
-)
-
-from .conftest import NOW, POWER, TV_CONFIG, local, setup_entry
+from .conftest import NOW, PLUG, POWER, TV_CONFIG, local, setup_entry, slot
 
 
 async def test_history_is_imported(
@@ -26,13 +21,14 @@ async def test_history_is_imported(
     freezer,
 ) -> None:
     freezer.move_to(local(12, 0, day=7))
+    hass.states.async_set(PLUG, "on")
     hass.states.async_set(POWER, "1.0")
     await hass.async_block_till_done()
     for day in (8, 9, 10):
         freezer.move_to(local(18, 0, day=day))
         hass.states.async_set(POWER, "90.0")
         await hass.async_block_till_done()
-        # A short dip that the debounce time has to swallow.
+        # A short dip that must not split the evening in two.
         freezer.move_to(local(18, 30, day=day))
         hass.states.async_set(POWER, "5.0")
         await hass.async_block_till_done()
@@ -45,19 +41,28 @@ async def test_history_is_imported(
     freezer.move_to(NOW)
     await async_wait_recording_done(hass)
 
-    config = {**TV_CONFIG, CONF_IMPORT_HISTORY: True, CONF_DEBOUNCE_SECONDS: 120}
-    entry = await setup_entry(hass, hass_storage, config)
+    entry = await setup_entry(hass, hass_storage, TV_CONFIG)
     manager = entry.runtime_data
 
-    assert manager.event_count == 6
-    # The 7th is not counted, we only saw it from noon.
-    assert manager.days_of_data == 3
+    recorded = manager._days["2026-03-09"]
+    assert recorded[POWER][slot(17, 55)] == 1.0
+    assert recorded[POWER][slot(18, 0)] == 90.0
+    assert recorded[POWER][slot(18, 30)] == 77.0
+    assert recorded[PLUG][slot(3, 0)] == 1.0
+    # Recording started at noon on the 7th; before that nothing is known.
+    assert manager._days["2026-03-07"][POWER][slot(11, 55)] is None
+    assert manager._days["2026-03-07"][POWER][slot(12, 0)] == 1.0
+    # And nothing is made up for the rest of today.
+    assert manager._days["2026-03-11"][POWER][slot(12, 5)] is None
+
+    assert manager.model.thresholds[POWER] is not None
     assert {(habit.kind, habit.minute) for habit in manager.habits} == {
         ("on", 18 * 60),
         ("off", 19 * 60),
     }
 
-    # A reload must not import the same history a second time.
+    # A reload must not import again; Re-learn would otherwise be undone.
+    await manager.async_relearn()
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.runtime_data.event_count == 6
+    assert entry.runtime_data._days == {}

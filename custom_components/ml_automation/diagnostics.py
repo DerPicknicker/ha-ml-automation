@@ -15,19 +15,25 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return what is needed to understand why a pattern behaves as it does."""
     manager = entry.runtime_data
-    source = hass.states.get(manager.source_entity)
-    forest = manager.forest
+    forest = manager.model.forest
     return {
         "config": manager.conf,
         "status": manager.status,
         "enabled": manager.enabled,
-        "source_state": source.state if source else None,
+        "learn_entities": {
+            entity: {
+                "state": state.state if (state := hass.states.get(entity)) else None,
+                "active": manager.entity_active(entity),
+                "active_above": manager.model.thresholds.get(entity),
+                "learned_from": entity in manager.label_entities,
+            }
+            for entity in manager.learn_entities
+        },
         "detected_active": manager.is_active,
-        "in_use": manager.is_busy,
+        "in_use": manager.in_use,
         "predicted_active": manager.predicted_active,
         "probability": manager.probability,
         "days_of_data": manager.days_of_data,
-        "transitions": manager.event_count,
         "model": {
             "trees": len(forest) if forest else 0,
             "trained_on_days": forest.days if forest else 0,

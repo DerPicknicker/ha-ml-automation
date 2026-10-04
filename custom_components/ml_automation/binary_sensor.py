@@ -25,9 +25,10 @@ async def async_setup_entry(
 
 
 class ActiveBinarySensor(MLAutomationEntity, BinarySensorEntity):
-    """Whether the source currently counts as active.
+    """Whether what the model learns from currently counts as active.
 
-    Handy for checking that the threshold or the active states are right.
+    The attributes show how each learning entity is read, including the
+    threshold that was learned for numeric ones.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -40,6 +41,21 @@ class ActiveBinarySensor(MLAutomationEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """Return the detected state."""
         return self.manager.is_active
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return how each learning entity is read."""
+        manager = self.manager
+        return {
+            "entities": {
+                entity: {
+                    "active": manager.entity_active(entity),
+                    "active_above": manager.model.thresholds.get(entity),
+                    "learned_from": entity in manager.label_entities,
+                }
+                for entity in manager.learn_entities
+            }
+        }
 
 
 class PredictedBinarySensor(MLAutomationEntity, BinarySensorEntity):

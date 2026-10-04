@@ -54,9 +54,9 @@ class StatusSensor(MLAutomationEntity, SensorEntity):
         """Return details about the last action."""
         last = self.manager.last_action
         return {
-            "source_entity": self.manager.source_entity,
-            "target_entities": self.manager.target_entities,
-            "in_use": self.manager.is_busy,
+            "control_entity": self.manager.control_entity,
+            "learn_entities": self.manager.learn_entities,
+            "in_use": self.manager.in_use,
             "last_action": last["kind"] if last else None,
             "last_action_time": (
                 dt_util.utc_from_timestamp(last["ts"]) if last else None
@@ -116,7 +116,7 @@ class PatternsSensor(MLAutomationEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the habits and what the model was trained on."""
-        forest = self.manager.forest
+        forest = self.manager.model.forest
         return {
             "patterns": [
                 {
@@ -153,7 +153,4 @@ class DaysOfDataSensor(MLAutomationEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return how much data is needed."""
-        return {
-            "days_required": self.manager.min_days,
-            "transitions": self.manager.event_count,
-        }
+        return {"days_required": self.manager.min_days}

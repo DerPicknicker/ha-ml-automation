@@ -6,9 +6,15 @@ repository.
 ## What this is
 
 ML Automation is a Home Assistant custom integration, distributed through HACS.
-It watches one entity (the *source*), learns at which times it is usually
-active, and switches other entities (the *targets*) on a bit before and off a
-while after those times. One config entry is one learned pattern.
+The user picks an entity to control and one or more entities to learn from.
+The integration records the learning entities, works out by itself what "in
+use" looks like, learns at which times that usually happens, and switches the
+controlled entity on a bit before and off a while after those times. One
+config entry is one learned pattern.
+
+The product goal is **zero configuration**: no thresholds, no state lists, no
+optional fields in setup. If a change would add a required decision to the
+setup flow, find a way to learn or default it instead.
 
 ## Layout
 
@@ -16,7 +22,7 @@ while after those times. One config entry is one learned pattern.
 custom_components/ml_automation/
   learner.py       The model. Pure Python, no Home Assistant imports.
   manager.py       One PatternManager per config entry: observe, learn, act.
-  config_flow.py   Config flow (user → source → control → learning) and options flow.
+  config_flow.py   Config flow (what to control → what to learn from) and options flow.
   entity.py        Base entity; all entities follow the manager via a dispatcher signal.
   sensor.py, binary_sensor.py, switch.py, button.py, number.py
   diagnostics.py   What a bug report needs.
@@ -42,16 +48,29 @@ validation. All three must pass.
 
 ## How the pieces fit
 
-1. `manager.py` records every debounced on/off transition of the source as an
-   event (`{"ts", "kind"}`) and keeps a set of *observed days*. Both are
-   persisted with `helpers.storage.Store`.
-2. Once a day (and on setup, Predict now, Re-learn) `learner.learn()` turns
-   the events into a 5-minute occupancy grid per observed day, trains a random
-   forest on (slot of day, weekday) → active, and reads *habits* off the weekly
-   probability profile: every crossing of the confidence threshold is a
-   switch-on or switch-off habit.
+1. `manager.py` samples every learning entity once a minute and stores the
+   mean per 5-minute slot (`_days[iso_day][entity_id][slot]`). Numeric states
+   are stored as they are, everything else as 1/0 (see `INACTIVE_STATES`).
+   Data is persisted with `helpers.storage.Store`; new learning entities are
+   seeded from the recorder.
+2. Once a day (and on setup, Predict now, Re-learn) `learner.learn()`
+   - derives a threshold per numeric entity from its values (`learn_threshold`,
+     Otsu's method),
+   - labels every slot *in use* if any **label entity** is active,
+   - trains a random forest on (slot of day, weekday) → in use,
+   - reads *habits* off the weekly probability profile: every crossing of the
+     confidence threshold is a switch-on or switch-off habit.
 3. `upcoming_actions()` projects habits onto the calendar, shifted by the lead
-   time (on) and the off delay (off). A tick every minute executes what is due.
+   time (on) and the off delay (off). The tick every minute executes what is
+   due.
+
+Three entity roles, all derived from the two config fields:
+
+- **learn entities**: everything that is recorded.
+- **evidence entities**: learn entities other than the controlled one. If any
+  is active, the controlled entity is *in use* and is not switched off.
+- **label entities**: what the model learns the timing of. The evidence
+  entities, or the controlled entity itself if there are none.
 
 ## Rules that are easy to break
 
@@ -60,16 +79,22 @@ validation. All three must pass.
   needs compiling (numpy, scikit-learn, torch) does not install reliably on
   Home Assistant OS. Training runs in the executor, never on the event loop.
 - **Today is never part of the model.** Only complete days are trained on.
-- **The integration must not learn from its own actions.** When a target we
-  switched makes the source change, `_record_transition` records it at the
-  learned time instead of the real one, and drops it if the user undoes the
-  action. Otherwise the lead time would drag the habit earlier every day.
-  Any change to how actions are executed needs a look at this.
+- **The integration must not learn from its own actions.** We switch on before
+  the learned time and off after it. `_discount_own_action` marks the slots in
+  between as ignored so they are never labelled *in use*; otherwise the habit
+  would creep earlier (or later) every day. Any change to how actions are
+  executed needs a look at this.
+- **Unknown is not idle.** Slots without data are `None` and are left out of
+  training. Don't fill gaps with zeros.
+- **The controlled entity is not evidence** when other learning entities
+  exist. Its state reflects our own switching.
 - **Training must be deterministic.** The forest is seeded; tests rely on it.
-- **Switch-off respects the guard.** `is_busy` postpones, it never skips.
+- **Switch-off respects use.** `in_use` postpones, it never skips.
 - **Translations stay in sync.** Every key in `translations/en.json` must exist
   in `translations/de.json`. New config options need a label and a description
   in both, in both the `config` and the `options` section.
+- **Existing entries must keep working.** A change to the shape of the config
+  entry needs a version bump and a step in `async_migrate_entry`.
 - **Options override data.** `manager.conf` is `{**entry.data, **entry.options}`;
   read settings from there with a default from `const.py`.
 
