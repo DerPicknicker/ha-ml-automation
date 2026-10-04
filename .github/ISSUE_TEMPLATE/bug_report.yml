@@ -1,0 +1,121 @@
+name: Bug report
+description: The integration does something wrong, or doesn't do what it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The more of this form you fill in, the
+        faster the problem can be found.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I am on the latest release of ML Automation.
+          required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: ML Automation version
+      description: Shown in HACS and under Settings → Devices & services → ML Automation.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About.
+      placeholder: "2026.9.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Home Assistant installation
+      options:
+        - Home Assistant OS
+        - Home Assistant Container
+        - Home Assistant Core
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is affected?
+      options:
+        - Learning (wrong, missing or unexpected patterns)
+        - Switching on
+        - Switching off / in-use guard
+        - Setup or configuration dialog
+        - Entities (sensors, buttons, switch, numbers)
+        - History import
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: source_type
+    attributes:
+      label: What does the pattern learn from?
+      options:
+        - Power or other numeric sensor
+        - Switch, light or input boolean
+        - Media player
+        - Person, presence or other binary sensor
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Include times. "The plug was switched off at 19:40 while the TV was running" is far more useful than "it switched off too early".
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can it be reproduced?
+      description: If it happens every day, say so. If it happened once, describe what was different that day.
+      placeholder: |
+        1. Pattern learns from sensor.tv_power, active above 20 W, switches switch.tv_plug
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Settings → Devices & services → ML Automation → ⋮ on the affected pattern → Download diagnostics.
+        Drag the file in here. It contains the settings, the learned habits and the model state; check it for anything you don't want to share.
+    validations:
+      required: true
+  - type: textarea
+    id: patterns
+    attributes:
+      label: Learned patterns
+      description: The attributes of the "Learned patterns" sensor (Developer tools → States), if the problem is about what was learned.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Settings → System → Logs, search for `ml_automation`. For switching problems, enable debug logging first
+        (Settings → Devices & services → ML Automation → ⋮ → Enable debug logging), wait for the problem to happen again, then disable it to download the log.
+      render: text
+  - type: textarea
+    id: anything_else
+    attributes:
+      label: Anything else?
