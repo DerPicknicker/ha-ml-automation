@@ -19,15 +19,23 @@ If your routine changes, press **Re-learn** and it starts from scratch.
 
 ## Installation
 
-**HACS:** open HACS, choose *⋮ → Custom repositories*, add
-`https://github.com/DerPicknicker/ha-ml-automation` with type *Integration*,
-then install *ML Automation* and restart Home Assistant.
+**HACS:** click the button to open the repository in your own Home Assistant,
+then choose *Download* and restart Home Assistant.
+
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DerPicknicker&repository=ha-ml-automation&category=integration)
+
+If the button does not work for you: open HACS, choose *⋮ → Custom
+repositories*, add `https://github.com/DerPicknicker/ha-ml-automation` with
+type *Integration*, then install *ML Automation* and restart Home Assistant.
 
 **Manually:** copy `custom_components/ml_automation` into the
 `custom_components` folder of your Home Assistant configuration and restart.
 
-Then go to *Settings → Devices & services → Add integration → ML Automation*.
-Add the integration once per pattern you want to learn.
+After the restart, add a pattern with this button, or go to *Settings → Devices
+& services → Add integration → ML Automation*. Add the integration once per
+pattern you want to learn.
+
+[![Open your Home Assistant instance and start setting up ML Automation.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=ml_automation)
 
 ## Setting up a pattern
 
