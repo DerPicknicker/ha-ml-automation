@@ -202,7 +202,8 @@ language).
 
 **The device with its prediction.** A normal Bubble button for the plug. Next
 to it: the suggestion, which only appears when there is one and applies it on
-tap, the probability of use, and the next switch-on.
+tap, the probability of use (labelled, because a bare percentage could be
+anything), and the next switch-on.
 
 ```yaml
 type: custom:bubble-card
@@ -223,8 +224,13 @@ sub_button:
       target:
         entity_id: button.tv_apply_suggestion
   - entity: sensor.tv_probability_of_use
+    name: Use
+    show_name: true
     show_state: true
+    show_icon: false
     show_background: false
+    tap_action:
+      action: more-info
   - entity: sensor.tv_next_switch_on
     show_state: true
     show_background: false
