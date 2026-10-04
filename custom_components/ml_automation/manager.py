@@ -16,7 +16,13 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import Context, HomeAssistant, State, callback
+from homeassistant.core import (
+    Context,
+    HomeAssistant,
+    State,
+    callback,
+    split_entity_id,
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
@@ -48,6 +54,7 @@ from .const import (
     STATUS_POSTPONED,
     STATUS_READY,
     STORAGE_VERSION,
+    SWITCH_SERVICES,
     TARGET_OFF_STATES,
 )
 from .learner import (
@@ -597,9 +604,13 @@ class PatternManager:
         _LOGGER.debug("Switching %s %s", self.control_entity, action.kind)
         self._discount_own_action(action, now)
         self.last_action = {"kind": action.kind, "ts": dt_util.utcnow().timestamp()}
+        domain, turn_on, turn_off = SWITCH_SERVICES.get(
+            split_entity_id(self.control_entity)[0],
+            ("homeassistant", SERVICE_TURN_ON, SERVICE_TURN_OFF),
+        )
         await self.hass.services.async_call(
-            "homeassistant",
-            SERVICE_TURN_ON if action.kind == KIND_ON else SERVICE_TURN_OFF,
+            domain,
+            turn_on if action.kind == KIND_ON else turn_off,
             {ATTR_ENTITY_ID: self.control_entity},
             context=Context(),
         )

@@ -41,7 +41,9 @@ DEFAULT_WINDOW_DAYS = 28
 DEFAULT_MIN_DAYS = 3
 DEFAULT_MIN_CONFIDENCE = 50
 
-# Domains that `homeassistant.turn_on` / `homeassistant.turn_off` can drive.
+# Domains that can be switched on and off. Most have `turn_on` / `turn_off`
+# services, which `homeassistant.turn_on` / `turn_off` dispatch to; the rest
+# are listed in SWITCH_SERVICES.
 CONTROL_DOMAINS = [
     "switch",
     "light",
@@ -55,6 +57,9 @@ CONTROL_DOMAINS = [
     "siren",
     "water_heater",
 ]
+
+# Domains without turn_on / turn_off: (domain, on service, off service).
+SWITCH_SERVICES = {"cover": ("cover", "open_cover", "close_cover")}
 
 # Sensors of the controlled device that show whether it is really being used,
 # best first. They are suggested as learning data during setup.

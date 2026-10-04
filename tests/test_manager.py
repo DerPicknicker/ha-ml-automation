@@ -496,3 +496,23 @@ async def test_migrates_hand_configured_entries(
     assert entry.data == {CONF_CONTROL_ENTITY: PLUG, CONF_LEARN_ENTITIES: [POWER]}
     assert entry.options == {"lead_minutes": 10, "off_delay_minutes": 30}
     assert entry.runtime_data.label_entities == [POWER]
+
+
+async def test_cover_is_opened_and_closed(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    """Covers have no turn_on / turn_off service."""
+    cover = "cover.blind"
+    hass.states.async_set(cover, "closed")
+    open_cover = async_mock_service(hass, "cover", "open_cover")
+    close_cover = async_mock_service(hass, "cover", "close_cover")
+    config = {CONF_CONTROL_ENTITY: cover, CONF_LEARN_ENTITIES: [cover]}
+    await setup_entry(hass, hass_storage, config, daily_use(cover))
+
+    await move_to(hass, freezer, local(17, 45))
+    assert len(open_cover) == 1
+    assert open_cover[0].data[ATTR_ENTITY_ID] == cover
+
+    hass.states.async_set(cover, "open")
+    await move_to(hass, freezer, local(20, 0))
+    assert len(close_cover) == 1
