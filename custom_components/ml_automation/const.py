@@ -33,11 +33,9 @@ CONF_GUARD_ABOVE = "guard_above"
 CONF_GUARD_GRACE_MINUTES = "guard_grace_minutes"
 CONF_CONDITION_ENTITY = "condition_entity"
 
-CONF_DAY_MODE = "day_mode"
 CONF_WINDOW_DAYS = "window_days"
-CONF_MIN_OCCURRENCES = "min_occurrences"
+CONF_MIN_DAYS = "min_days"
 CONF_MIN_CONFIDENCE = "min_confidence"
-CONF_TOLERANCE_MINUTES = "tolerance_minutes"
 CONF_IMPORT_HISTORY = "import_history"
 
 # --- Source modes -------------------------------------------------------
@@ -51,9 +49,8 @@ DEFAULT_LEAD_MINUTES = 15
 DEFAULT_OFF_DELAY_MINUTES = 60
 DEFAULT_GUARD_GRACE_MINUTES = 15
 DEFAULT_WINDOW_DAYS = 28
-DEFAULT_MIN_OCCURRENCES = 3
-DEFAULT_MIN_CONFIDENCE = 60
-DEFAULT_TOLERANCE_MINUTES = 45
+DEFAULT_MIN_DAYS = 3
+DEFAULT_MIN_CONFIDENCE = 50
 
 # Domains whose state is normally a number.
 NUMERIC_DOMAINS = ("sensor", "number", "input_number")

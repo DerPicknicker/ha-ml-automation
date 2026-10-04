@@ -39,7 +39,6 @@ from .const import (
     CONF_CONDITION_ENTITY,
     CONF_CONTROL_OFF,
     CONF_CONTROL_ON,
-    CONF_DAY_MODE,
     CONF_DEBOUNCE_SECONDS,
     CONF_GUARD_ABOVE,
     CONF_GUARD_ENTITY,
@@ -47,21 +46,19 @@ from .const import (
     CONF_IMPORT_HISTORY,
     CONF_LEAD_MINUTES,
     CONF_MIN_CONFIDENCE,
-    CONF_MIN_OCCURRENCES,
+    CONF_MIN_DAYS,
     CONF_OFF_DELAY_MINUTES,
     CONF_SOURCE_ENTITY,
     CONF_SOURCE_MODE,
     CONF_TARGET_ENTITIES,
-    CONF_TOLERANCE_MINUTES,
     CONF_WINDOW_DAYS,
     DEFAULT_ACTIVE_ABOVE,
     DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_GUARD_GRACE_MINUTES,
     DEFAULT_LEAD_MINUTES,
     DEFAULT_MIN_CONFIDENCE,
-    DEFAULT_MIN_OCCURRENCES,
+    DEFAULT_MIN_DAYS,
     DEFAULT_OFF_DELAY_MINUTES,
-    DEFAULT_TOLERANCE_MINUTES,
     DEFAULT_WINDOW_DAYS,
     DOMAIN,
     FALLBACK_ACTIVE_STATES,
@@ -78,14 +75,14 @@ from .const import (
     TARGET_OFF_STATES,
 )
 from .learner import (
-    DAY_MODE_WORKDAY_WEEKEND,
     KIND_OFF,
     KIND_ON,
+    SLOT_MINUTES,
     Action,
+    Forest,
     Habit,
-    Transition,
     extract_transitions,
-    learn_habits,
+    learn,
     upcoming_actions,
 )
 
@@ -143,6 +140,7 @@ class PatternManager:
         self.enabled = True
 
         # Runtime
+        self.forest: Forest | None = None
         self.habits: list[Habit] = []
         self.is_active: bool | None = None
         self.last_action: dict[str, Any] | None = None
@@ -188,13 +186,9 @@ class PatternManager:
         return int(self.conf.get(CONF_WINDOW_DAYS, DEFAULT_WINDOW_DAYS))
 
     @property
-    def _day_mode(self) -> str:
-        return self.conf.get(CONF_DAY_MODE, DAY_MODE_WORKDAY_WEEKEND)
-
-    @property
-    def min_occurrences(self) -> int:
-        """Days a habit has to show up on before it is trusted."""
-        return int(self.conf.get(CONF_MIN_OCCURRENCES, DEFAULT_MIN_OCCURRENCES))
+    def min_days(self) -> int:
+        """Complete days of data needed before the model is trusted."""
+        return int(self.conf.get(CONF_MIN_DAYS, DEFAULT_MIN_DAYS))
 
     # --- Derived state --------------------------------------------------
 
@@ -253,6 +247,16 @@ class PatternManager:
             return None
         return action.kind == KIND_ON
 
+    @property
+    def probability(self) -> float | None:
+        """Return how likely the model thinks the source is active right now."""
+        if self.forest is None:
+            return None
+        now = dt_util.now()
+        return self.forest.probability(
+            now.weekday(), (now.hour * 60 + now.minute) // SLOT_MINUTES
+        )
+
     def next_action(self, kind: str) -> Action | None:
         """Return the next scheduled action of the given kind."""
         now = dt_util.now()
@@ -280,11 +284,11 @@ class PatternManager:
         self._today = now.date()
         self._observed.add(self._today.isoformat())
         self._last_tick = now
+        self.is_active = self._evaluate_source(self.hass.states.get(self.source_entity))
         self._prune(now)
-        self._rebuild_model(now)
+        await self._async_rebuild_model(now)
         self._async_schedule_save()
 
-        self.is_active = self._evaluate_source(self.hass.states.get(self.source_entity))
         self._unsubs.append(
             async_track_state_change_event(
                 self.hass, [self.source_entity], self._async_source_changed
@@ -323,7 +327,7 @@ class PatternManager:
         """
         now = dt_util.now()
         self._prune(now)
-        self._rebuild_model(now)
+        await self._async_rebuild_model(now)
         if (action := self.last_due_action(now)) is not None:
             await self._async_execute(action, now)
         self._notify()
@@ -336,7 +340,7 @@ class PatternManager:
         self._history_imported = True
         self.last_action = None
         self._clear_pending_off()
-        self._rebuild_model(now)
+        await self._async_rebuild_model(now)
         await self._store.async_save(self._data_to_save())
         self._notify()
 
@@ -377,41 +381,35 @@ class PatternManager:
         active_states = self.conf.get(CONF_ACTIVE_STATES) or FALLBACK_ACTIVE_STATES
         return state.state in active_states
 
-    def _rebuild_model(self, now: datetime) -> None:
-        """Recompute habits and the schedule from complete days only."""
+    async def _async_rebuild_model(self, now: datetime) -> None:
+        """Retrain the model on complete days and derive the schedule from it."""
         today = now.date()
-        transitions: list[Transition] = []
-        for event in self._events:
-            local = dt_util.as_local(dt_util.utc_from_timestamp(event["ts"]))
-            if local.date() >= today:
-                continue
-            transitions.append(
-                Transition(
-                    day=local.date(),
-                    minute=local.hour * 60 + local.minute,
-                    kind=event["kind"],
-                )
-            )
         observed = [
             day for iso in self._observed if (day := date.fromisoformat(iso)) < today
         ]
-        self.habits = learn_habits(
-            transitions,
-            observed,
-            day_mode=self._day_mode,
-            tolerance_minutes=int(
-                self.conf.get(CONF_TOLERANCE_MINUTES, DEFAULT_TOLERANCE_MINUTES)
-            ),
-            min_occurrences=self.min_occurrences,
-            min_confidence=self.conf.get(CONF_MIN_CONFIDENCE, DEFAULT_MIN_CONFIDENCE)
-            / 100,
+        events = sorted(self._events, key=lambda event: event["ts"])
+        states = [event["kind"] == KIND_ON for event in events]
+        # Training is pure Python number crunching; keep it off the event loop.
+        self.forest, self.habits = await self.hass.async_add_executor_job(
+            partial(
+                learn,
+                observed,
+                now.tzinfo,
+                [event["ts"] for event in events],
+                states,
+                not states[0] if states else bool(self.is_active),
+                today=today,
+                half_life_days=self._window_days / 2,
+                min_days=self.min_days,
+                threshold=self.conf.get(CONF_MIN_CONFIDENCE, DEFAULT_MIN_CONFIDENCE)
+                / 100,
+            )
         )
         self._schedule = upcoming_actions(
             self.habits,
             start_day=today - timedelta(days=_SCHEDULE_PAST_DAYS),
             days=_SCHEDULE_DAYS,
             tz=now.tzinfo,
-            day_mode=self._day_mode,
             lead=self.lead,
             off_delay=self.off_delay,
         )
@@ -519,8 +517,15 @@ class PatternManager:
                 # having happened at its learned time instead.
                 if not last["reinforced"]:
                     last["reinforced"] = True
+                    learned = last["habit_ts"]
+                    latest = max((event["ts"] for event in self._events), default=0)
+                    # Fall back to the real time if the learned time would
+                    # rewrite history that was recorded since.
+                    last["event_ts"] = (
+                        learned if learned is not None and learned > latest else ts
+                    )
                     self._events.append(
-                        {"ts": last["habit_ts"], "kind": kind, "auto": True}
+                        {"ts": last["event_ts"], "kind": kind, "auto": True}
                     )
                 return
             if (
@@ -533,7 +538,7 @@ class PatternManager:
                 self._events = [
                     event
                     for event in self._events
-                    if not (event.get("auto") and event["ts"] == last["habit_ts"])
+                    if not (event.get("auto") and event["ts"] == last["event_ts"])
                 ]
                 return
         self._events.append({"ts": ts, "kind": kind})
@@ -550,7 +555,7 @@ class PatternManager:
             self._today = now.date()
             self._observed.add(self._today.isoformat())
             self._prune(now)
-            self._rebuild_model(now)
+            await self._async_rebuild_model(now)
             self._async_schedule_save()
 
         last_tick = self._last_tick or now
@@ -608,15 +613,19 @@ class PatternManager:
         if now - self._idle_since >= grace:
             action = self._pending_off
             self._clear_pending_off()
-            await self._async_switch(action)
+            await self._async_switch(action, postponed=True)
 
     def _clear_pending_off(self) -> None:
         self._pending_off = None
         self._pending_off_since = None
         self._idle_since = None
 
-    async def _async_switch(self, action: Action) -> None:
-        """Switch the targets that are not yet in the wanted state."""
+    async def _async_switch(self, action: Action, *, postponed: bool = False) -> None:
+        """Switch the targets that are not yet in the wanted state.
+
+        A postponed switch-off happened late because the targets were really
+        in use, so it must not be learned as having happened at the usual time.
+        """
         targets = []
         for entity_id in self.target_entities:
             state = self.hass.states.get(entity_id)
@@ -631,7 +640,7 @@ class PatternManager:
         self.last_action = {
             "kind": action.kind,
             "ts": dt_util.utcnow().timestamp(),
-            "habit_ts": action.habit_time.timestamp(),
+            "habit_ts": None if postponed else action.habit_time.timestamp(),
             "reinforced": False,
         }
         await self.hass.services.async_call(

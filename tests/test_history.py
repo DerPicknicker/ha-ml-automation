@@ -11,11 +11,9 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from homeassistant.core import HomeAssistant
 
 from custom_components.ml_automation.const import (
-    CONF_DAY_MODE,
     CONF_DEBOUNCE_SECONDS,
     CONF_IMPORT_HISTORY,
 )
-from custom_components.ml_automation.learner import DAY_MODE_ALL
 
 from .conftest import NOW, POWER, TV_CONFIG, local, setup_entry
 
@@ -47,22 +45,17 @@ async def test_history_is_imported(
     freezer.move_to(NOW)
     await async_wait_recording_done(hass)
 
-    config = {
-        **TV_CONFIG,
-        CONF_IMPORT_HISTORY: True,
-        CONF_DAY_MODE: DAY_MODE_ALL,
-        CONF_DEBOUNCE_SECONDS: 120,
-    }
+    config = {**TV_CONFIG, CONF_IMPORT_HISTORY: True, CONF_DEBOUNCE_SECONDS: 120}
     entry = await setup_entry(hass, hass_storage, config)
     manager = entry.runtime_data
 
     assert manager.event_count == 6
     # The 7th is not counted, we only saw it from noon.
     assert manager.days_of_data == 3
-    assert [(habit.kind, habit.minute) for habit in manager.habits] == [
+    assert {(habit.kind, habit.minute) for habit in manager.habits} == {
         ("on", 18 * 60),
         ("off", 19 * 60),
-    ]
+    }
 
     # A reload must not import the same history a second time.
     assert await hass.config_entries.async_reload(entry.entry_id)

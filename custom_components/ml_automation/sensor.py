@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import STATUSES
 from .entity import MLAutomationEntity
-from .learner import KIND_OFF, KIND_ON
+from .learner import KIND_OFF, KIND_ON, WEEKDAYS, Habit
 from .manager import MLAutomationConfigEntry
 
 
@@ -92,32 +92,46 @@ class NextActionSensor(MLAutomationEntity, SensorEntity):
 
 
 class PatternsSensor(MLAutomationEntity, SensorEntity):
-    """The habits that were found."""
+    """The habits the model predicts.
+
+    The model predicts every weekday on its own; habits that happen at the
+    same time on several days are shown as one.
+    """
 
     def __init__(self, entry: MLAutomationConfigEntry) -> None:
         """Initialise the sensor."""
         super().__init__(entry, "patterns")
 
+    def _grouped(self) -> dict[tuple[int, str], list[Habit]]:
+        groups: dict[tuple[int, str], list[Habit]] = {}
+        for habit in self.manager.habits:
+            groups.setdefault((habit.minute, habit.kind), []).append(habit)
+        return dict(sorted(groups.items()))
+
     @property
     def native_value(self) -> int:
-        """Return the number of habits."""
-        return len(self.manager.habits)
+        """Return the number of distinct habits."""
+        return len(self._grouped())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the habits."""
+        """Return the habits and what the model was trained on."""
+        forest = self.manager.forest
         return {
             "patterns": [
                 {
-                    "kind": habit.kind,
-                    "days": habit.group,
-                    "time": habit.time.strftime("%H:%M"),
-                    "confidence": round(habit.confidence * 100),
-                    "seen_on_days": habit.days,
-                    "observed_days": habit.observed,
+                    "kind": kind,
+                    "time": habits[0].time.strftime("%H:%M"),
+                    "days": [WEEKDAYS[habit.weekday] for habit in habits],
+                    "confidence": round(
+                        sum(habit.confidence for habit in habits) / len(habits) * 100
+                    ),
                 }
-                for habit in self.manager.habits
-            ]
+                for (_, kind), habits in self._grouped().items()
+            ],
+            "model": "random_forest",
+            "trees": len(forest) if forest else 0,
+            "trained_on_days": forest.days if forest else 0,
         }
 
 
@@ -140,6 +154,6 @@ class DaysOfDataSensor(MLAutomationEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return how much data is needed."""
         return {
-            "days_required": self.manager.min_occurrences,
+            "days_required": self.manager.min_days,
             "transitions": self.manager.event_count,
         }

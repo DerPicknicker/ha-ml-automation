@@ -49,18 +49,15 @@
       "learning": {
         "title": "How should it learn?",
         "data": {
-          "day_mode": "Days",
           "window_days": "Remember the last",
-          "min_occurrences": "Seen on at least",
-          "min_confidence": "Seen on at least this share of days",
-          "tolerance_minutes": "Time tolerance",
+          "min_days": "Days of data needed",
+          "min_confidence": "Confidence needed",
           "import_history": "Start with the existing history"
         },
         "data_description": {
-          "day_mode": "Which days are expected to look alike.",
-          "window_days": "Older data is forgotten, so the pattern follows slow changes on its own.",
-          "min_occurrences": "A habit has to show up on this many days before it is trusted.",
-          "tolerance_minutes": "How far the time may vary from day to day and still count as the same habit.",
+          "window_days": "Older data is forgotten and recent days count more, so the model follows slow changes on its own.",
+          "min_days": "Nothing is predicted before this many complete days were observed. It is also how many days are needed to tell weekdays apart.",
+          "min_confidence": "A period counts as a habit when the model is at least this sure the entity is active.",
           "import_history": "Uses what the recorder already knows about the entity, so there is no waiting."
         }
       }
@@ -108,27 +105,15 @@
       "learning": {
         "title": "How should it learn?",
         "data": {
-          "day_mode": "Days",
           "window_days": "Remember the last",
-          "min_occurrences": "Seen on at least",
-          "min_confidence": "Seen on at least this share of days",
-          "tolerance_minutes": "Time tolerance"
+          "min_days": "Days of data needed",
+          "min_confidence": "Confidence needed"
         },
         "data_description": {
-          "day_mode": "Which days are expected to look alike.",
-          "window_days": "Older data is forgotten, so the pattern follows slow changes on its own.",
-          "min_occurrences": "A habit has to show up on this many days before it is trusted.",
-          "tolerance_minutes": "How far the time may vary from day to day and still count as the same habit."
+          "window_days": "Older data is forgotten and recent days count more, so the model follows slow changes on its own.",
+          "min_days": "Nothing is predicted before this many complete days were observed. It is also how many days are needed to tell weekdays apart.",
+          "min_confidence": "A period counts as a habit when the model is at least this sure the entity is active."
         }
-      }
-    }
-  },
-  "selector": {
-    "day_mode": {
-      "options": {
-        "workday_weekend": "Workdays and weekend separately",
-        "all": "All days alike",
-        "weekday": "Every weekday separately"
       }
     }
   },

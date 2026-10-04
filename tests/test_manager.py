@@ -15,10 +15,14 @@ from custom_components.ml_automation.const import (
     CONF_CONDITION_ENTITY,
     CONF_CONTROL_ON,
     CONF_DEBOUNCE_SECONDS,
+    CONF_GUARD_ENTITY,
     CONF_SOURCE_ENTITY,
     CONF_SOURCE_MODE,
     CONF_TARGET_ENTITIES,
     MODE_STATE,
+)
+from custom_components.ml_automation.diagnostics import (
+    async_get_config_entry_diagnostics,
 )
 
 from .conftest import PLUG, POWER, TV_CONFIG, daily_events, local, move_to, setup_entry
@@ -60,8 +64,16 @@ async def test_learned_pattern_is_exposed(
     await setup_entry(hass, hass_storage, TV_CONFIG, daily_events())
 
     assert _state(hass, "sensor.tv_status") == "controlling"
-    # On and off, for workdays and for the weekend.
-    assert _state(hass, "sensor.tv_learned_patterns") == "4"
+    # Switch-on and switch-off, at the same time on every day of the week.
+    patterns = hass.states.get("sensor.tv_learned_patterns")
+    assert patterns.state == "2"
+    assert patterns.attributes["patterns"][0] == {
+        "kind": "on",
+        "time": "18:00",
+        "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+        "confidence": 100,
+    }
+    assert patterns.attributes["trained_on_days"] == 10
     assert _state(hass, "sensor.tv_days_of_data") == "10"
     # 18:00 minus 15 minutes, 19:00 plus 60 minutes; Berlin is UTC+1 in March.
     assert _state(hass, "sensor.tv_next_switch_on") == "2026-03-11T16:45:00+00:00"
@@ -231,10 +243,10 @@ async def test_learns_from_live_changes(
     await move_to(hass, freezer, local(0, 0, day=14))
     await move_to(hass, freezer, local(0, 1, day=14))
 
-    assert [(habit.kind, habit.minute) for habit in manager.habits] == [
+    assert {(habit.kind, habit.minute) for habit in manager.habits} == {
         ("on", 18 * 60),
         ("off", 19 * 60),
-    ]
+    }
 
 
 async def test_short_spikes_are_ignored(
@@ -325,7 +337,7 @@ async def test_data_survives_reload(
     await hass.async_block_till_done()
 
     assert entry.runtime_data.event_count == 21
-    assert _state(hass, "sensor.tv_learned_patterns") == "4"
+    assert _state(hass, "sensor.tv_learned_patterns") == "2"
 
 
 async def test_number_changes_lead_time(
@@ -356,6 +368,13 @@ async def test_predicted_state_follows_the_schedule(
 
     await move_to(hass, freezer, local(17, 45))
     assert _state(hass, "binary_sensor.tv_predicted_state") == "on"
+    # The model itself only expects activity from 18:00.
+    predicted = hass.states.get("binary_sensor.tv_predicted_state")
+    assert predicted.attributes["probability"] == 0
+
+    await move_to(hass, freezer, local(18, 30))
+    predicted = hass.states.get("binary_sensor.tv_predicted_state")
+    assert predicted.attributes["probability"] == 100
 
     await move_to(hass, freezer, local(20, 0))
     assert _state(hass, "binary_sensor.tv_predicted_state") == "off"
@@ -430,3 +449,40 @@ async def test_predict_now_without_pattern_does_nothing(
 
     assert not turn_off
     assert _state(hass, "binary_sensor.tv_predicted_state") == "unknown"
+
+
+async def test_postponed_switch_off_is_learned_at_its_real_time(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    """A lamp that was kept on by its guard really was in use for longer."""
+    hass.states.async_set(LAMP, "on")
+    hass.states.async_set("binary_sensor.motion", "on")
+    async_mock_service(hass, "homeassistant", "turn_off")
+    config = {**LAMP_CONFIG, CONF_GUARD_ENTITY: "binary_sensor.motion"}
+    entry = await setup_entry(hass, hass_storage, config, daily_events())
+    manager = entry.runtime_data
+
+    await move_to(hass, freezer, local(20, 0))
+    hass.states.async_set("binary_sensor.motion", "off")
+    await move_to(hass, freezer, local(21, 0))
+    await move_to(hass, freezer, local(21, 15))
+    hass.states.async_set(LAMP, "off")
+    await hass.async_block_till_done()
+
+    assert manager._events[-1] == {
+        "ts": local(21, 15).timestamp(),
+        "kind": "off",
+        "auto": True,
+    }
+
+
+async def test_diagnostics(hass: HomeAssistant, hass_storage: dict[str, Any]) -> None:
+    hass.states.async_set(POWER, "1.0")
+    entry = await setup_entry(hass, hass_storage, TV_CONFIG, daily_events())
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["status"] == "controlling"
+    assert diagnostics["source_state"] == "1.0"
+    assert diagnostics["model"] == {"trees": 20, "trained_on_days": 10}
+    assert len(diagnostics["habits"]) == 14

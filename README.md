@@ -34,7 +34,7 @@ Add the integration once per pattern you want to learn.
 | How early / how late | Minutes before the learned switch-on time and after the learned switch-off time. |
 | In-use guard | Switch-off is postponed while this entity is active. By default the entity that is learned from is used. |
 | Presence condition | Optional: only switch on while e.g. a person is home. |
-| How should it learn? | Which days look alike, how much history to keep, and how regular something must be to count as a habit. |
+| How should it learn? | How much history to keep, how many days of data are needed, and how sure the model must be before something counts as a habit. |
 
 Everything except the learned-from entity can be changed later via *Configure*.
 
@@ -56,8 +56,8 @@ Each pattern is a device with these entities:
 | --- | --- |
 | Status | `Learning`, `Ready`, `Controlling` or `Switch-off postponed` |
 | Next switch-on / Next switch-off | When the targets will be switched next |
-| Learned patterns | Number of habits; the attributes list each with its time and confidence |
-| Predicted state | Whether the pattern expects the targets to be on right now |
+| Learned patterns | Number of habits; the attributes list each with its time, days and confidence |
+| Predicted state | Whether the pattern expects the targets to be on right now; the attribute `probability` is the raw model output |
 | Detected activity | Whether the learned-from entity currently counts as active. Use it to check your threshold. |
 | Days of data | How many complete days the model is built from |
 | Automation (switch) | Off = keep learning, but don't switch anything |
@@ -67,28 +67,48 @@ Each pattern is a device with these entities:
 
 ## How it learns
 
-There is no black box. Every time the learned-from entity becomes active or
-inactive, the time of day is stored. Once a day the stored times are searched
-for a time window in which the same change happened on most days. Such a window
-is a habit, and its median time is what the integration acts on.
+The model is a small **random forest** (an ensemble of decision trees), written
+in plain Python so it installs on every Home Assistant system without extra
+packages.
 
-- **Days:** workdays and weekend are learned separately by default. You can
-  also treat all days alike or learn every weekday on its own (needs more
-  weeks of data).
-- **How regular is regular?** By default a habit has to show up on at least 3
-  days and on at least 60 % of the observed days, within ±45 minutes.
-- **Forgetting:** only the last 28 days count, so slow changes are followed
-  automatically. For sudden changes there is the Re-learn button.
+1. Every observed day is cut into 5-minute slots, each labelled *active* or
+   *not active*.
+2. Decision trees learn to predict that label from the **time of day** and the
+   **day of the week**. Each of the 20 trees is trained on a random selection
+   of the observed days.
+3. Averaging the trees gives the probability of activity for every slot of the
+   week. Where it rises above the confidence threshold (default 50 %), a
+   switch-on habit begins; where it falls below, a switch-off habit.
+
+What follows from that:
+
+- **It finds out on its own which days are alike.** If your weekends differ
+  from your workdays, or Wednesday is different from every other day, the
+  trees split on the weekday. If all days look the same, they don't. Telling
+  days apart needs at least 3 days (configurable) on each side, so one unusual
+  evening does not become a rule.
+- **One-offs are ignored.** Something that happened on one day out of ten has a
+  probability of about 10 % and stays below the threshold.
+- **Recent days count more.** Only the last 28 days are kept, and within them a
+  day's influence halves every 14 days. Slow changes, like watching longer in
+  winter, are followed automatically. For sudden changes there is the
+  **Re-learn** button.
 - **Head start:** when a pattern is added, the recorder history of the entity
   is used, so there is usually enough data right away. Re-learn does not do
   that; it really starts empty.
-- **Today doesn't count yet.** The model is rebuilt at midnight from complete
-  days only.
+- **Today doesn't count yet.** The model is retrained at midnight on complete
+  days only. Training takes a fraction of a second.
 - **Its own actions are not habits.** If the integration switches something and
   the learned-from entity follows (e.g. you learn from the same light you
   switch), that is counted as "the habit happened at its usual time", not as a
   new, earlier habit. If you undo the action within 30 minutes, it doesn't
   count at all, and a habit you keep rejecting fades away.
+
+Why not a neural network such as a GRU? It would need PyTorch or TensorFlow,
+which do not install reliably on Home Assistant OS, and a few weeks of data
+from a single device are far too little to train one well. A forest gets more
+out of little data, and you can read what it learned in the *Learned patterns*
+sensor.
 
 ### Good to know
 
@@ -96,17 +116,24 @@ is a habit, and its median time is what the integration acts on.
   If you learn from the same entity that is switched, the integration can only
   see its own switching once it is in control, and shifts in your routine are
   no longer picked up without a Re-learn.
-- Nothing is switched if Home Assistant was not running at the time.
+- Until there is enough data to tell days apart (about two weeks for
+  workdays versus weekend), all days are treated alike.
+- Nothing is switched if Home Assistant was not running at the time; press
+  **Predict now** to catch up.
 - A postponed switch-off is dropped after 12 hours or when the next switch-on
   is due.
 
-## Development
+## Problems and ideas
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements_test.txt
-.venv/bin/python -m pytest
-```
+Please use the issue forms of this repository. For bugs, attach the diagnostics
+of the pattern (*⋮ → Download diagnostics* on the pattern under *Settings →
+Devices & services → ML Automation*).
 
-`learner.py` contains the learning logic and has no Home Assistant
-dependencies; `manager.py` connects it to Home Assistant.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The code is explained in
+[AGENTS.md](AGENTS.md).
+
+## License
+
+[MIT](LICENSE)

@@ -49,18 +49,15 @@
       "learning": {
         "title": "Wie soll gelernt werden?",
         "data": {
-          "day_mode": "Tage",
           "window_days": "Zeitraum, der gemerkt wird",
-          "min_occurrences": "Mindestens gesehen an",
-          "min_confidence": "Mindestens an diesem Anteil der Tage gesehen",
-          "tolerance_minutes": "Zeittoleranz",
+          "min_days": "Benötigte Tage mit Daten",
+          "min_confidence": "Benötigte Sicherheit",
           "import_history": "Mit dem vorhandenen Verlauf starten"
         },
         "data_description": {
-          "day_mode": "Welche Tage sich voraussichtlich gleichen.",
-          "window_days": "Ältere Daten werden vergessen, so folgt das Muster langsamen Veränderungen von selbst.",
-          "min_occurrences": "Eine Gewohnheit muss an so vielen Tagen auftreten, bevor ihr vertraut wird.",
-          "tolerance_minutes": "Wie stark die Uhrzeit von Tag zu Tag abweichen darf, um noch als dieselbe Gewohnheit zu gelten.",
+          "window_days": "Ältere Daten werden vergessen und neuere Tage zählen mehr, so folgt das Modell langsamen Veränderungen von selbst.",
+          "min_days": "Vorher wird nichts vorhergesagt. So viele Tage sind auch nötig, um Wochentage zu unterscheiden.",
+          "min_confidence": "Ein Zeitraum gilt als Gewohnheit, wenn das Modell mindestens so sicher ist, dass die Entität aktiv ist.",
           "import_history": "Nutzt, was der Recorder bereits über die Entität weiß, sodass keine Wartezeit entsteht."
         }
       }
@@ -108,27 +105,15 @@
       "learning": {
         "title": "Wie soll gelernt werden?",
         "data": {
-          "day_mode": "Tage",
           "window_days": "Zeitraum, der gemerkt wird",
-          "min_occurrences": "Mindestens gesehen an",
-          "min_confidence": "Mindestens an diesem Anteil der Tage gesehen",
-          "tolerance_minutes": "Zeittoleranz"
+          "min_days": "Benötigte Tage mit Daten",
+          "min_confidence": "Benötigte Sicherheit"
         },
         "data_description": {
-          "day_mode": "Welche Tage sich voraussichtlich gleichen.",
-          "window_days": "Ältere Daten werden vergessen, so folgt das Muster langsamen Veränderungen von selbst.",
-          "min_occurrences": "Eine Gewohnheit muss an so vielen Tagen auftreten, bevor ihr vertraut wird.",
-          "tolerance_minutes": "Wie stark die Uhrzeit von Tag zu Tag abweichen darf, um noch als dieselbe Gewohnheit zu gelten."
+          "window_days": "Ältere Daten werden vergessen und neuere Tage zählen mehr, so folgt das Modell langsamen Veränderungen von selbst.",
+          "min_days": "Vorher wird nichts vorhergesagt. So viele Tage sind auch nötig, um Wochentage zu unterscheiden.",
+          "min_confidence": "Ein Zeitraum gilt als Gewohnheit, wenn das Modell mindestens so sicher ist, dass die Entität aktiv ist."
         }
-      }
-    }
-  },
-  "selector": {
-    "day_mode": {
-      "options": {
-        "workday_weekend": "Werktage und Wochenende getrennt",
-        "all": "Alle Tage gleich",
-        "weekday": "Jeder Wochentag einzeln"
       }
     }
   },

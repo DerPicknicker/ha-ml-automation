@@ -22,7 +22,6 @@ from .const import (
     CONF_CONDITION_ENTITY,
     CONF_CONTROL_OFF,
     CONF_CONTROL_ON,
-    CONF_DAY_MODE,
     CONF_DEBOUNCE_SECONDS,
     CONF_GUARD_ABOVE,
     CONF_GUARD_ENTITY,
@@ -30,21 +29,19 @@ from .const import (
     CONF_IMPORT_HISTORY,
     CONF_LEAD_MINUTES,
     CONF_MIN_CONFIDENCE,
-    CONF_MIN_OCCURRENCES,
+    CONF_MIN_DAYS,
     CONF_OFF_DELAY_MINUTES,
     CONF_SOURCE_ENTITY,
     CONF_SOURCE_MODE,
     CONF_TARGET_ENTITIES,
-    CONF_TOLERANCE_MINUTES,
     CONF_WINDOW_DAYS,
     DEFAULT_ACTIVE_ABOVE,
     DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_GUARD_GRACE_MINUTES,
     DEFAULT_LEAD_MINUTES,
     DEFAULT_MIN_CONFIDENCE,
-    DEFAULT_MIN_OCCURRENCES,
+    DEFAULT_MIN_DAYS,
     DEFAULT_OFF_DELAY_MINUTES,
-    DEFAULT_TOLERANCE_MINUTES,
     DEFAULT_WINDOW_DAYS,
     DOMAIN,
     DOMAIN_ACTIVE_STATES,
@@ -54,7 +51,6 @@ from .const import (
     NUMERIC_DOMAINS,
     TARGET_DOMAINS,
 )
-from .learner import DAY_MODE_WORKDAY_WEEKEND, DAY_MODES
 
 # Optional fields the user may clear again; an absent key means "not set".
 _CLEARABLE = (CONF_GUARD_ENTITY, CONF_GUARD_ABOVE, CONF_CONDITION_ENTITY)
@@ -172,29 +168,15 @@ def _learning_schema(current: dict[str, Any], *, initial: bool) -> vol.Schema:
     """Schema describing how patterns are learned."""
     fields: dict[Any, Any] = {
         vol.Required(
-            CONF_DAY_MODE, default=current.get(CONF_DAY_MODE, DAY_MODE_WORKDAY_WEEKEND)
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=DAY_MODES,
-                translation_key=CONF_DAY_MODE,
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        ),
-        vol.Required(
             CONF_WINDOW_DAYS, default=current.get(CONF_WINDOW_DAYS, DEFAULT_WINDOW_DAYS)
         ): _number(3, 365, "d"),
         vol.Required(
-            CONF_MIN_OCCURRENCES,
-            default=current.get(CONF_MIN_OCCURRENCES, DEFAULT_MIN_OCCURRENCES),
+            CONF_MIN_DAYS, default=current.get(CONF_MIN_DAYS, DEFAULT_MIN_DAYS)
         ): _number(2, 60, "d"),
         vol.Required(
             CONF_MIN_CONFIDENCE,
             default=current.get(CONF_MIN_CONFIDENCE, DEFAULT_MIN_CONFIDENCE),
         ): _number(10, 100, "%"),
-        vol.Required(
-            CONF_TOLERANCE_MINUTES,
-            default=current.get(CONF_TOLERANCE_MINUTES, DEFAULT_TOLERANCE_MINUTES),
-        ): _number(5, 240, "min"),
     }
     if initial:
         fields[vol.Required(CONF_IMPORT_HISTORY, default=True)] = (

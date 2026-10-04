@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
@@ -51,3 +53,11 @@ class PredictedBinarySensor(MLAutomationEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """Return the expected state."""
         return self.manager.predicted_active
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the raw model output for the current time."""
+        probability = self.manager.probability
+        return {
+            "probability": None if probability is None else round(probability * 100)
+        }

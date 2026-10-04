@@ -99,4 +99,5 @@ async def move_to(hass: HomeAssistant, freezer, when: datetime) -> None:
     """Advance the clock and let everything that is due run."""
     freezer.move_to(when)
     async_fire_time_changed(hass, when)
-    await hass.async_block_till_done()
+    # The minutely tick may retrain the model in the executor.
+    await hass.async_block_till_done(wait_background_tasks=True)
