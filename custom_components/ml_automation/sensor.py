@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -27,6 +31,7 @@ async def async_setup_entry(
         [
             StatusSensor(entry),
             SuggestionSensor(entry),
+            ProbabilitySensor(entry),
             NextActionSensor(entry, KIND_ON),
             NextActionSensor(entry, KIND_OFF),
             PatternsSensor(entry),
@@ -96,6 +101,28 @@ class SuggestionSensor(MLAutomationEntity, SensorEntity):
                 else None
             ),
         }
+
+
+class ProbabilitySensor(MLAutomationEntity, SensorEntity):
+    """How likely the model thinks there is use right now.
+
+    The raw prediction as an entity of its own, so dashboard cards can show
+    it without digging into attributes.
+    """
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialise the sensor."""
+        super().__init__(entry, "probability")
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the probability in percent."""
+        probability = self.manager.probability
+        return None if probability is None else round(probability * 100)
 
 
 class NextActionSensor(MLAutomationEntity, SensorEntity):

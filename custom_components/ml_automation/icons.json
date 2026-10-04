@@ -1,0 +1,77 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "predicted": {
+        "default": "mdi:crystal-ball"
+      }
+    },
+    "button": {
+      "apply_suggestion": {
+        "default": "mdi:gesture-tap-button"
+      },
+      "predict_now": {
+        "default": "mdi:crystal-ball"
+      },
+      "relearn": {
+        "default": "mdi:restart"
+      }
+    },
+    "number": {
+      "lead_minutes": {
+        "default": "mdi:clock-start"
+      },
+      "off_delay_minutes": {
+        "default": "mdi:clock-end"
+      }
+    },
+    "sensor": {
+      "status": {
+        "default": "mdi:brain",
+        "state": {
+          "collecting": "mdi:database-arrow-down",
+          "no_activity": "mdi:sleep",
+          "no_pattern": "mdi:help-circle-outline",
+          "ready": "mdi:lightbulb-on-outline",
+          "controlling": "mdi:robot",
+          "postponed": "mdi:timer-sand"
+        }
+      },
+      "suggestion": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "switch_on": "mdi:power-on",
+          "switch_off": "mdi:power-off"
+        }
+      },
+      "probability": {
+        "default": "mdi:percent"
+      },
+      "next_on": {
+        "default": "mdi:clock-start"
+      },
+      "next_off": {
+        "default": "mdi:clock-end"
+      },
+      "patterns": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "days_of_data": {
+        "default": "mdi:calendar-check"
+      }
+    },
+    "switch": {
+      "automation": {
+        "default": "mdi:robot",
+        "state": {
+          "off": "mdi:robot-off"
+        }
+      },
+      "control_on": {
+        "default": "mdi:power-on"
+      },
+      "control_off": {
+        "default": "mdi:power-off"
+      }
+    }
+  }
+}

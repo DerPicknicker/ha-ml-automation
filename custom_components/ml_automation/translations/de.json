@@ -110,6 +110,9 @@
           "switch_on": "Einschalten",
           "switch_off": "Ausschalten"
         }
+      },
+      "probability": {
+        "name": "Nutzungswahrscheinlichkeit"
       }
     },
     "switch": {

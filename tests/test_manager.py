@@ -73,6 +73,7 @@ async def test_starts_in_learning_mode(
     # No level is known for the sensor yet, so no activity is detected.
     assert _state(hass, "binary_sensor.tv_detected_activity") == "off"
     assert _state(hass, "sensor.tv_suggestion") == "none"
+    assert _state(hass, "sensor.tv_probability_of_use") == "unknown"
     assert _state(hass, "button.tv_apply_suggestion") == "unavailable"
     assert _state(hass, "switch.tv_automation") == "on"
 
@@ -477,10 +478,14 @@ async def test_predicted_state_follows_the_schedule(
     # The model itself only expects activity from 18:00.
     predicted = hass.states.get("binary_sensor.tv_predicted_state")
     assert predicted.attributes["probability"] == 0
+    assert _state(hass, "sensor.tv_probability_of_use") == "0"
 
     await move_to(hass, freezer, local(18, 30))
     predicted = hass.states.get("binary_sensor.tv_predicted_state")
     assert predicted.attributes["probability"] == 100
+    probability = hass.states.get("sensor.tv_probability_of_use")
+    assert probability.state == "100"
+    assert probability.attributes["unit_of_measurement"] == "%"
 
     await move_to(hass, freezer, local(20, 0))
     assert _state(hass, "binary_sensor.tv_predicted_state") == "off"

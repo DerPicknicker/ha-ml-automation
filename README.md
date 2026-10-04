@@ -123,6 +123,7 @@ Each pattern is a device with these entities:
 | Automation (switch) | Master switch. On = switches by itself. Off = keeps learning and only suggests. |
 | Switch on automatically (switch) | Off = never switches on by itself, only suggests it |
 | Switch off automatically (switch) | Off = never switches off by itself, only suggests it |
+| Probability of use | The model's prediction for right now, in percent |
 | Next switch-on / Next switch-off | When the controlled entity will be switched next |
 | Learned patterns | Number of habits; the attributes list each with its time, days and confidence |
 | Predicted state | Whether the pattern expects the controlled entity to be on right now; the attribute `probability` is the raw model output |
@@ -189,6 +190,71 @@ automation:
         target:
           entity_id: "{{ trigger.event.data.apply_button }}"
 ```
+
+## On your dashboard
+
+Everything the integration predicts is an ordinary entity with its own icon, so
+it works in any card. Two examples for
+[Bubble Card](https://github.com/Clooos/Bubble-Card); they follow its
+documentation and are a starting point to adapt. Replace the entity ids with
+yours (they are derived from the name of the controlled entity and from your
+language).
+
+**The device with its prediction.** A normal Bubble button for the plug. Next
+to it: the suggestion, which only appears when there is one and applies it on
+tap, the probability of use, and the next switch-on.
+
+```yaml
+type: custom:bubble-card
+card_type: button
+button_type: switch
+entity: switch.tv_plug
+name: TV
+sub_button:
+  - entity: sensor.tv_suggestion
+    show_state: true
+    visibility:
+      - condition: state
+        entity: sensor.tv_suggestion
+        state_not: none
+    tap_action:
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.tv_apply_suggestion
+  - entity: sensor.tv_probability_of_use
+    show_state: true
+    show_background: false
+  - entity: sensor.tv_next_switch_on
+    show_state: true
+    show_background: false
+```
+
+**A suggestion bubble, like on a phone.** One card per pattern that is only
+there while something is suggested; a tap does it. Stack several of them at the
+top of a view and it stays empty until the integration has something to offer.
+
+```yaml
+type: custom:bubble-card
+card_type: button
+button_type: state
+entity: sensor.tv_suggestion
+name: TV
+show_state: true
+visibility:
+  - condition: state
+    entity: sensor.tv_suggestion
+    state_not: none
+tap_action:
+  action: perform-action
+  perform_action: button.press
+  target:
+    entity_id: button.tv_apply_suggestion
+```
+
+Suggestions appear for whatever the integration does not do by itself, so turn
+*Automation* (or one of the two direction switches) off for the patterns you
+want to be asked about.
 
 ## How it learns
 

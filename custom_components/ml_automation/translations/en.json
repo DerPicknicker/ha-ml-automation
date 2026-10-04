@@ -110,6 +110,9 @@
           "switch_on": "Switch on",
           "switch_off": "Switch off"
         }
+      },
+      "probability": {
+        "name": "Probability of use"
       }
     },
     "switch": {
