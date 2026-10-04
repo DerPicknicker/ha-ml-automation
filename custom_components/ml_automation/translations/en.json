@@ -1,0 +1,189 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Learn a new pattern",
+        "description": "Pick the entity whose behaviour should be learned. A power sensor works best, because it shows when a device is really being used.",
+        "data": {
+          "name": "Name",
+          "source_entity": "Entity to learn from"
+        }
+      },
+      "source": {
+        "title": "When is it active?",
+        "description": "Define when {entity} counts as active. The times at which it becomes active and inactive are what gets learned.",
+        "data": {
+          "active_above": "Active above",
+          "active_states": "Active states",
+          "debounce_seconds": "Ignore changes shorter than"
+        },
+        "data_description": {
+          "active_above": "The entity counts as active while its value is above this.",
+          "active_states": "The entity counts as active while it is in one of these states. You can type your own.",
+          "debounce_seconds": "Filters out short spikes and dips."
+        }
+      },
+      "control": {
+        "title": "What should be switched?",
+        "description": "Leave the entities empty to only learn and predict without switching anything.",
+        "data": {
+          "target_entities": "Entities to switch",
+          "control_on": "Switch on automatically",
+          "lead_minutes": "Switch on this early",
+          "control_off": "Switch off automatically",
+          "off_delay_minutes": "Switch off this late",
+          "guard_entity": "Don't switch off while this is active",
+          "guard_above": "In use above",
+          "guard_grace_minutes": "Switch off after being unused for",
+          "condition_entity": "Only switch on while this is active"
+        },
+        "data_description": {
+          "lead_minutes": "Minutes before the learned switch-on time.",
+          "off_delay_minutes": "Minutes after the learned switch-off time.",
+          "guard_entity": "Optional. If empty, the entity that is learned from is used, unless it is switched itself.",
+          "guard_above": "Optional. For a numeric entity: counts as in use while above this value.",
+          "guard_grace_minutes": "When a switch-off was postponed because of use, it happens once the entity was unused for this long.",
+          "condition_entity": "Optional. For example a person or a presence sensor."
+        }
+      },
+      "learning": {
+        "title": "How should it learn?",
+        "data": {
+          "day_mode": "Days",
+          "window_days": "Remember the last",
+          "min_occurrences": "Seen on at least",
+          "min_confidence": "Seen on at least this share of days",
+          "tolerance_minutes": "Time tolerance",
+          "import_history": "Start with the existing history"
+        },
+        "data_description": {
+          "day_mode": "Which days are expected to look alike.",
+          "window_days": "Older data is forgotten, so the pattern follows slow changes on its own.",
+          "min_occurrences": "A habit has to show up on this many days before it is trusted.",
+          "tolerance_minutes": "How far the time may vary from day to day and still count as the same habit.",
+          "import_history": "Uses what the recorder already knows about the entity, so there is no waiting."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "When is it active?",
+        "description": "Define when {entity} counts as active.",
+        "data": {
+          "active_above": "Active above",
+          "active_states": "Active states",
+          "debounce_seconds": "Ignore changes shorter than"
+        },
+        "data_description": {
+          "active_above": "The entity counts as active while its value is above this.",
+          "active_states": "The entity counts as active while it is in one of these states. You can type your own.",
+          "debounce_seconds": "Filters out short spikes and dips."
+        }
+      },
+      "control": {
+        "title": "What should be switched?",
+        "description": "Leave the entities empty to only learn and predict without switching anything.",
+        "data": {
+          "target_entities": "Entities to switch",
+          "control_on": "Switch on automatically",
+          "lead_minutes": "Switch on this early",
+          "control_off": "Switch off automatically",
+          "off_delay_minutes": "Switch off this late",
+          "guard_entity": "Don't switch off while this is active",
+          "guard_above": "In use above",
+          "guard_grace_minutes": "Switch off after being unused for",
+          "condition_entity": "Only switch on while this is active"
+        },
+        "data_description": {
+          "lead_minutes": "Minutes before the learned switch-on time.",
+          "off_delay_minutes": "Minutes after the learned switch-off time.",
+          "guard_entity": "Optional. If empty, the entity that is learned from is used, unless it is switched itself.",
+          "guard_above": "Optional. For a numeric entity: counts as in use while above this value.",
+          "guard_grace_minutes": "When a switch-off was postponed because of use, it happens once the entity was unused for this long.",
+          "condition_entity": "Optional. For example a person or a presence sensor."
+        }
+      },
+      "learning": {
+        "title": "How should it learn?",
+        "data": {
+          "day_mode": "Days",
+          "window_days": "Remember the last",
+          "min_occurrences": "Seen on at least",
+          "min_confidence": "Seen on at least this share of days",
+          "tolerance_minutes": "Time tolerance"
+        },
+        "data_description": {
+          "day_mode": "Which days are expected to look alike.",
+          "window_days": "Older data is forgotten, so the pattern follows slow changes on its own.",
+          "min_occurrences": "A habit has to show up on this many days before it is trusted.",
+          "tolerance_minutes": "How far the time may vary from day to day and still count as the same habit."
+        }
+      }
+    }
+  },
+  "selector": {
+    "day_mode": {
+      "options": {
+        "workday_weekend": "Workdays and weekend separately",
+        "all": "All days alike",
+        "weekday": "Every weekday separately"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "active": {
+        "name": "Detected activity"
+      },
+      "predicted": {
+        "name": "Predicted state"
+      }
+    },
+    "button": {
+      "predict_now": {
+        "name": "Predict now"
+      },
+      "relearn": {
+        "name": "Re-learn"
+      }
+    },
+    "number": {
+      "lead_minutes": {
+        "name": "Switch on early"
+      },
+      "off_delay_minutes": {
+        "name": "Switch off late"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "learning": "Learning",
+          "ready": "Ready",
+          "controlling": "Controlling",
+          "postponed": "Switch-off postponed"
+        }
+      },
+      "next_on": {
+        "name": "Next switch-on"
+      },
+      "next_off": {
+        "name": "Next switch-off"
+      },
+      "patterns": {
+        "name": "Learned patterns"
+      },
+      "days_of_data": {
+        "name": "Days of data"
+      }
+    },
+    "switch": {
+      "automation": {
+        "name": "Automation"
+      }
+    }
+  }
+}

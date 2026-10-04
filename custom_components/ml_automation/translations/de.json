@@ -1,0 +1,189 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Neues Muster lernen",
+        "description": "Wähle die Entität, deren Verhalten gelernt werden soll. Am besten eignet sich ein Leistungssensor, weil er zeigt, wann ein Gerät wirklich benutzt wird.",
+        "data": {
+          "name": "Name",
+          "source_entity": "Entität, von der gelernt wird"
+        }
+      },
+      "source": {
+        "title": "Wann ist sie aktiv?",
+        "description": "Lege fest, wann {entity} als aktiv gilt. Gelernt werden die Zeiten, zu denen sie aktiv und wieder inaktiv wird.",
+        "data": {
+          "active_above": "Aktiv oberhalb von",
+          "active_states": "Aktive Zustände",
+          "debounce_seconds": "Änderungen ignorieren, die kürzer sind als"
+        },
+        "data_description": {
+          "active_above": "Die Entität gilt als aktiv, solange ihr Wert darüber liegt.",
+          "active_states": "Die Entität gilt als aktiv, solange sie in einem dieser Zustände ist. Eigene Werte können eingetippt werden.",
+          "debounce_seconds": "Filtert kurze Spitzen und Einbrüche heraus."
+        }
+      },
+      "control": {
+        "title": "Was soll geschaltet werden?",
+        "description": "Ohne Entitäten wird nur gelernt und vorhergesagt, aber nichts geschaltet.",
+        "data": {
+          "target_entities": "Zu schaltende Entitäten",
+          "control_on": "Automatisch einschalten",
+          "lead_minutes": "So viel früher einschalten",
+          "control_off": "Automatisch ausschalten",
+          "off_delay_minutes": "So viel später ausschalten",
+          "guard_entity": "Nicht ausschalten, solange dies aktiv ist",
+          "guard_above": "In Benutzung oberhalb von",
+          "guard_grace_minutes": "Ausschalten nach ungenutzter Zeit von",
+          "condition_entity": "Nur einschalten, solange dies aktiv ist"
+        },
+        "data_description": {
+          "lead_minutes": "Minuten vor der gelernten Einschaltzeit.",
+          "off_delay_minutes": "Minuten nach der gelernten Ausschaltzeit.",
+          "guard_entity": "Optional. Ohne Angabe wird die Entität verwendet, von der gelernt wird, außer sie wird selbst geschaltet.",
+          "guard_above": "Optional. Für eine numerische Entität: gilt als in Benutzung, solange der Wert darüber liegt.",
+          "guard_grace_minutes": "Wurde das Ausschalten wegen Benutzung aufgeschoben, erfolgt es, sobald die Entität so lange ungenutzt war.",
+          "condition_entity": "Optional. Zum Beispiel eine Person oder ein Anwesenheitssensor."
+        }
+      },
+      "learning": {
+        "title": "Wie soll gelernt werden?",
+        "data": {
+          "day_mode": "Tage",
+          "window_days": "Zeitraum, der gemerkt wird",
+          "min_occurrences": "Mindestens gesehen an",
+          "min_confidence": "Mindestens an diesem Anteil der Tage gesehen",
+          "tolerance_minutes": "Zeittoleranz",
+          "import_history": "Mit dem vorhandenen Verlauf starten"
+        },
+        "data_description": {
+          "day_mode": "Welche Tage sich voraussichtlich gleichen.",
+          "window_days": "Ältere Daten werden vergessen, so folgt das Muster langsamen Veränderungen von selbst.",
+          "min_occurrences": "Eine Gewohnheit muss an so vielen Tagen auftreten, bevor ihr vertraut wird.",
+          "tolerance_minutes": "Wie stark die Uhrzeit von Tag zu Tag abweichen darf, um noch als dieselbe Gewohnheit zu gelten.",
+          "import_history": "Nutzt, was der Recorder bereits über die Entität weiß, sodass keine Wartezeit entsteht."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wann ist sie aktiv?",
+        "description": "Lege fest, wann {entity} als aktiv gilt.",
+        "data": {
+          "active_above": "Aktiv oberhalb von",
+          "active_states": "Aktive Zustände",
+          "debounce_seconds": "Änderungen ignorieren, die kürzer sind als"
+        },
+        "data_description": {
+          "active_above": "Die Entität gilt als aktiv, solange ihr Wert darüber liegt.",
+          "active_states": "Die Entität gilt als aktiv, solange sie in einem dieser Zustände ist. Eigene Werte können eingetippt werden.",
+          "debounce_seconds": "Filtert kurze Spitzen und Einbrüche heraus."
+        }
+      },
+      "control": {
+        "title": "Was soll geschaltet werden?",
+        "description": "Ohne Entitäten wird nur gelernt und vorhergesagt, aber nichts geschaltet.",
+        "data": {
+          "target_entities": "Zu schaltende Entitäten",
+          "control_on": "Automatisch einschalten",
+          "lead_minutes": "So viel früher einschalten",
+          "control_off": "Automatisch ausschalten",
+          "off_delay_minutes": "So viel später ausschalten",
+          "guard_entity": "Nicht ausschalten, solange dies aktiv ist",
+          "guard_above": "In Benutzung oberhalb von",
+          "guard_grace_minutes": "Ausschalten nach ungenutzter Zeit von",
+          "condition_entity": "Nur einschalten, solange dies aktiv ist"
+        },
+        "data_description": {
+          "lead_minutes": "Minuten vor der gelernten Einschaltzeit.",
+          "off_delay_minutes": "Minuten nach der gelernten Ausschaltzeit.",
+          "guard_entity": "Optional. Ohne Angabe wird die Entität verwendet, von der gelernt wird, außer sie wird selbst geschaltet.",
+          "guard_above": "Optional. Für eine numerische Entität: gilt als in Benutzung, solange der Wert darüber liegt.",
+          "guard_grace_minutes": "Wurde das Ausschalten wegen Benutzung aufgeschoben, erfolgt es, sobald die Entität so lange ungenutzt war.",
+          "condition_entity": "Optional. Zum Beispiel eine Person oder ein Anwesenheitssensor."
+        }
+      },
+      "learning": {
+        "title": "Wie soll gelernt werden?",
+        "data": {
+          "day_mode": "Tage",
+          "window_days": "Zeitraum, der gemerkt wird",
+          "min_occurrences": "Mindestens gesehen an",
+          "min_confidence": "Mindestens an diesem Anteil der Tage gesehen",
+          "tolerance_minutes": "Zeittoleranz"
+        },
+        "data_description": {
+          "day_mode": "Welche Tage sich voraussichtlich gleichen.",
+          "window_days": "Ältere Daten werden vergessen, so folgt das Muster langsamen Veränderungen von selbst.",
+          "min_occurrences": "Eine Gewohnheit muss an so vielen Tagen auftreten, bevor ihr vertraut wird.",
+          "tolerance_minutes": "Wie stark die Uhrzeit von Tag zu Tag abweichen darf, um noch als dieselbe Gewohnheit zu gelten."
+        }
+      }
+    }
+  },
+  "selector": {
+    "day_mode": {
+      "options": {
+        "workday_weekend": "Werktage und Wochenende getrennt",
+        "all": "Alle Tage gleich",
+        "weekday": "Jeder Wochentag einzeln"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "active": {
+        "name": "Erkannte Aktivität"
+      },
+      "predicted": {
+        "name": "Vorhergesagter Zustand"
+      }
+    },
+    "button": {
+      "predict_now": {
+        "name": "Jetzt vorhersagen"
+      },
+      "relearn": {
+        "name": "Neu lernen"
+      }
+    },
+    "number": {
+      "lead_minutes": {
+        "name": "Früher einschalten"
+      },
+      "off_delay_minutes": {
+        "name": "Später ausschalten"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "learning": "Lernt",
+          "ready": "Bereit",
+          "controlling": "Steuert",
+          "postponed": "Ausschalten aufgeschoben"
+        }
+      },
+      "next_on": {
+        "name": "Nächstes Einschalten"
+      },
+      "next_off": {
+        "name": "Nächstes Ausschalten"
+      },
+      "patterns": {
+        "name": "Gelernte Muster"
+      },
+      "days_of_data": {
+        "name": "Tage mit Daten"
+      }
+    },
+    "switch": {
+      "automation": {
+        "name": "Automatik"
+      }
+    }
+  }
+}
