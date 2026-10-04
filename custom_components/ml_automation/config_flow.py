@@ -12,13 +12,11 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, split_entity_id
 from homeassistant.helpers import entity_registry as er, selector
 
 from .const import (
     CONF_CONTROL_ENTITY,
-    CONF_CONTROL_OFF,
-    CONF_CONTROL_ON,
     CONF_GUARD_GRACE_MINUTES,
     CONF_LEAD_MINUTES,
     CONF_LEARN_ENTITIES,
@@ -34,7 +32,6 @@ from .const import (
     DEFAULT_OFF_DELAY_MINUTES,
     DEFAULT_WINDOW_DAYS,
     DOMAIN,
-    USAGE_DEVICE_CLASSES,
 )
 
 
@@ -50,29 +47,37 @@ def _number(minimum: float, maximum: float, unit: str) -> selector.NumberSelecto
     )
 
 
-def suggest_learn_entities(hass: HomeAssistant, control_entity: str) -> list[str]:
-    """Suggest what to learn from: the controlled entity and its usage sensors.
+def suggest_control_entity(hass: HomeAssistant, learn_entities: list[str]) -> str | None:
+    """Suggest what to control, given what is learned from.
 
-    A smart plug is usually always on, so its state says little. The power it
-    measures does, and it lives on the same device.
+    If something switchable is learned from, that is the obvious candidate.
+    Otherwise look at the devices: the power sensor of a smart plug sits on
+    the same device as the plug's switch.
     """
-    suggestion = [control_entity]
-    registry = er.async_get(hass)
-    entry = registry.async_get(control_entity)
-    if entry is None or entry.device_id is None:
-        return suggestion
+    for entity_id in learn_entities:
+        if split_entity_id(entity_id)[0] in CONTROL_DOMAINS:
+            return entity_id
 
-    by_class: dict[str, list[str]] = {}
-    for sibling in er.async_entries_for_device(registry, entry.device_id):
-        if sibling.domain != "sensor":
+    registry = er.async_get(hass)
+    for entity_id in learn_entities:
+        entry = registry.async_get(entity_id)
+        if entry is None or entry.device_id is None:
             continue
-        device_class = sibling.device_class or sibling.original_device_class
-        by_class.setdefault(device_class or "", []).append(sibling.entity_id)
-    for device_class in USAGE_DEVICE_CLASSES:
-        if device_class in by_class:
-            # One kind of measurement is enough; power beats current.
-            return suggestion + sorted(by_class[device_class])
-    return suggestion
+        siblings = [
+            sibling
+            for sibling in er.async_entries_for_device(registry, entry.device_id)
+            # Skip the configuration toggles many devices come with.
+            if sibling.domain in CONTROL_DOMAINS and sibling.entity_category is None
+        ]
+        if siblings:
+            return min(
+                siblings,
+                key=lambda sibling: (
+                    CONTROL_DOMAINS.index(sibling.domain),
+                    sibling.entity_id,
+                ),
+            ).entity_id
+    return None
 
 
 def _learn_field(default: list[str]) -> dict[Any, Any]:
@@ -91,15 +96,9 @@ def _settings_schema(current: dict[str, Any]) -> vol.Schema:
                 current.get(CONF_LEARN_ENTITIES) or [current[CONF_CONTROL_ENTITY]]
             ),
             vol.Required(
-                CONF_CONTROL_ON, default=current.get(CONF_CONTROL_ON, True)
-            ): selector.BooleanSelector(),
-            vol.Required(
                 CONF_LEAD_MINUTES,
                 default=current.get(CONF_LEAD_MINUTES, DEFAULT_LEAD_MINUTES),
             ): _number(0, 240, "min"),
-            vol.Required(
-                CONF_CONTROL_OFF, default=current.get(CONF_CONTROL_OFF, True)
-            ): selector.BooleanSelector(),
             vol.Required(
                 CONF_OFF_DELAY_MINUTES,
                 default=current.get(CONF_OFF_DELAY_MINUTES, DEFAULT_OFF_DELAY_MINUTES),
@@ -126,13 +125,13 @@ def _settings_schema(current: dict[str, Any]) -> vol.Schema:
 
 
 class MLAutomationConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Set up a new learned pattern: what to control, and what to learn from."""
+    """Set up a new learned pattern: what to learn from, and what to control."""
 
     VERSION = 2
 
     def __init__(self) -> None:
         """Initialise the flow."""
-        self._control_entity = ""
+        self._learn_entities: list[str] = []
 
     @staticmethod
     @callback
@@ -143,45 +142,50 @@ class MLAutomationConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the entity to control."""
-        if user_input is not None:
-            self._control_entity = user_input[CONF_CONTROL_ENTITY]
-            await self.async_set_unique_id(self._control_entity)
-            self._abort_if_unique_id_configured()
-            return await self.async_step_learn()
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_CONTROL_ENTITY): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain=CONTROL_DOMAINS)
-                    )
-                }
-            ),
-        )
-
-    async def async_step_learn(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
         """Pick the data to learn from."""
         errors = {}
         if user_input is not None:
             if user_input[CONF_LEARN_ENTITIES]:
-                state = self.hass.states.get(self._control_entity)
-                return self.async_create_entry(
-                    title=state.name if state else self._control_entity,
-                    data={CONF_CONTROL_ENTITY: self._control_entity, **user_input},
-                )
+                self._learn_entities = user_input[CONF_LEARN_ENTITIES]
+                return await self.async_step_control()
             errors[CONF_LEARN_ENTITIES] = "no_entities"
 
         return self.async_show_form(
-            step_id="learn",
+            step_id="user", data_schema=vol.Schema(_learn_field([])), errors=errors
+        )
+
+    async def async_step_control(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the entity to control."""
+        if user_input is not None:
+            control_entity = user_input[CONF_CONTROL_ENTITY]
+            await self.async_set_unique_id(control_entity)
+            self._abort_if_unique_id_configured()
+            state = self.hass.states.get(control_entity)
+            return self.async_create_entry(
+                title=state.name if state else control_entity,
+                data={
+                    CONF_CONTROL_ENTITY: control_entity,
+                    CONF_LEARN_ENTITIES: self._learn_entities,
+                },
+            )
+
+        suggestion = suggest_control_entity(self.hass, self._learn_entities)
+        field = (
+            vol.Required(CONF_CONTROL_ENTITY, default=suggestion)
+            if suggestion
+            else vol.Required(CONF_CONTROL_ENTITY)
+        )
+        return self.async_show_form(
+            step_id="control",
             data_schema=vol.Schema(
-                _learn_field(suggest_learn_entities(self.hass, self._control_entity))
+                {
+                    field: selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain=CONTROL_DOMAINS)
+                    )
+                }
             ),
-            errors=errors,
-            description_placeholders={"entity": self._control_entity},
         )
 
 

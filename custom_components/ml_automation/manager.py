@@ -138,6 +138,12 @@ class PatternManager:
         self._kinds: dict[str, str] = {}
         self._imported: set[str] = set()
         self.enabled = True
+        # Which directions we switch by ourselves. Before these became
+        # switches they were options, which still provide the initial value.
+        self.directions = {
+            KIND_ON: bool(self.conf.get(CONF_CONTROL_ON, True)),
+            KIND_OFF: bool(self.conf.get(CONF_CONTROL_OFF, True)),
+        }
 
         # Runtime
         self.model = Model()
@@ -232,8 +238,7 @@ class PatternManager:
 
     def _acts(self, kind: str) -> bool:
         """Return whether we switch in this direction by ourselves."""
-        direction = CONF_CONTROL_ON if kind == KIND_ON else CONF_CONTROL_OFF
-        return self.enabled and self.conf.get(direction, True)
+        return self.enabled and self.directions[kind]
 
     def entity_active(self, entity_id: str) -> bool | None:
         """Return whether a learning entity is active right now.
@@ -371,6 +376,8 @@ class PatternManager:
             self._kinds = data.get("kinds", {})
             self._imported = set(data.get("imported", []))
             self.enabled = data.get("enabled", True)
+            for kind in self.directions:
+                self.directions[kind] = data.get(f"switch_{kind}", self.directions[kind])
 
         now = dt_util.now()
         for entity in self.learn_entities:
@@ -411,6 +418,14 @@ class PatternManager:
         """Allow or forbid switching the controlled entity."""
         self.enabled = enabled
         if not enabled:
+            self._clear_pending_off()
+        self._async_schedule_save()
+        self._notify()
+
+    async def async_set_direction(self, kind: str, enabled: bool) -> None:
+        """Allow or forbid switching on, or off, by ourselves."""
+        self.directions[kind] = enabled
+        if kind == KIND_OFF and not enabled:
             self._clear_pending_off()
         self._async_schedule_save()
         self._notify()
@@ -464,6 +479,7 @@ class PatternManager:
             "kinds": self._kinds,
             "imported": sorted(self._imported),
             "enabled": self.enabled,
+            **{f"switch_{kind}": value for kind, value in self.directions.items()},
         }
 
     @callback
@@ -659,17 +675,13 @@ class PatternManager:
         self._notify()
 
     async def _async_execute(self, action: Action, now: datetime) -> None:
-        if not self.enabled:
+        if not self._acts(action.kind):
             return
         if action.kind == KIND_ON:
-            if not self.conf.get(CONF_CONTROL_ON, True):
-                return
             self._clear_pending_off()
             await self._async_switch(action, now)
             return
 
-        if not self.conf.get(CONF_CONTROL_OFF, True):
-            return
         if self.in_use:
             _LOGGER.debug("Postponing switch-off, %s is in use", self.control_entity)
             self._pending_off = action
@@ -682,7 +694,7 @@ class PatternManager:
         """Switch off once nothing was in use for the grace period."""
         if self._pending_off is None or self._pending_off_since is None:
             return
-        if not self.enabled or now - self._pending_off_since > timedelta(
+        if not self._acts(KIND_OFF) or now - self._pending_off_since > timedelta(
             hours=PENDING_OFF_MAX_HOURS
         ):
             self._clear_pending_off()

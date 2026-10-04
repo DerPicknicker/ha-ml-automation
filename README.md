@@ -7,7 +7,7 @@
 A Home Assistant integration that learns when you use your devices and
 switches them for you, so you don't have to write an automation for every one.
 
-You tell it two things: **what to control** and **what to learn from**. There
+You tell it two things: **what to learn from** and **what to control**. There
 are no thresholds, schedules or states to enter. It records the learning data,
 works out by itself what "in use" looks like, finds the times at which that
 repeats, and then
@@ -45,16 +45,18 @@ pattern you want to learn.
 
 Two steps, nothing optional:
 
-1. **What should be controlled?** The entity to switch on and off: a switch, a
-   light, a media player, a fan, a climate entity, a cover …
-2. **What should it learn from?** One or more entities that show when it is in
-   use. This is pre-filled with the controlled entity itself, plus the power
-   (or current) sensor of the same device if it has one. Add or remove
-   whatever you like: a power sensor, a media player, a motion sensor …
+1. **What should it learn from?** One or more entities that show when
+   something is in use: a power sensor, the device itself, a media player, a
+   motion sensor …
+2. **What should be controlled?** The entity to switch on and off: a switch, a
+   light, a media player, a fan, a climate entity, a cover … If what you learn
+   from can be switched, or belongs to a device that can (the power sensor of
+   a smart plug), that entity is already filled in.
 
 That's it. Everything else has a default and can be changed later under
-*Configure*: how early and how late to switch, whether to switch on, off or
-both, how many days to remember and how sure the model has to be.
+*Configure*: what to learn from, how early and how late to switch, how many
+days to remember and how sure the model has to be. Whether it switches on, off
+or both is decided with two switches on the device page.
 
 ### What "in use" means
 
@@ -72,11 +74,10 @@ both, how many days to remember and how sure the model has to be.
 
 ### Example: TV on a smart plug that is always on
 
-- Control: `switch.tv_plug`
-- Learn from: `switch.tv_plug` and `sensor.tv_plug_power` (suggested
-  automatically)
+- Learn from: `sensor.tv_plug_power`
+- Control: `switch.tv_plug` (suggested automatically)
 
-The plug's state is always `on` and teaches nothing, but its power readings
+The plug's state is always `on` and would teach nothing, but its power readings
 show that you usually watch from about 18:00 to 19:00. After a few days the
 plug is switched on at 17:45 and off at 20:00. If you are still watching at
 20:00 the plug stays on; it is switched off once the TV has been idle for 15
@@ -84,8 +85,8 @@ minutes.
 
 ### Example: a lamp with nothing but itself
 
-- Control: `light.reading_lamp`
 - Learn from: `light.reading_lamp`
+- Control: `light.reading_lamp` (suggested automatically)
 
 The lamp's own on/off times are learned. Since nothing else shows whether it is
 really in use, it is switched off an hour after the learned time without
@@ -119,7 +120,9 @@ Each pattern is a device with these entities:
 | Status | Where the pattern stands, see below |
 | Suggestion | `Switch on`, `Switch off` or `Nothing`: what you probably want right now |
 | Apply suggestion (button) | Does what is suggested. Unavailable while there is nothing to suggest. |
-| Automation (switch) | On = switches by itself. Off = keeps learning and only suggests. |
+| Automation (switch) | Master switch. On = switches by itself. Off = keeps learning and only suggests. |
+| Switch on automatically (switch) | Off = never switches on by itself, only suggests it |
+| Switch off automatically (switch) | Off = never switches off by itself, only suggests it |
 | Next switch-on / Next switch-off | When the controlled entity will be switched next |
 | Learned patterns | Number of habits; the attributes list each with its time, days and confidence |
 | Predicted state | Whether the pattern expects the controlled entity to be on right now; the attribute `probability` is the raw model output |
@@ -146,8 +149,9 @@ a pattern was found; there is nothing to show before that.
 ### Suggestions
 
 A suggestion appears when the pattern calls for switching and the integration
-is not doing it itself, i.e. the automation is off or that direction is
-disabled, and only when the model is at least 70 % sure. Put the *Apply
+is not doing it itself, i.e. the automation or the switch for that direction
+is off, and only when the model is at least 70 % sure. To only cut standby
+power but never power anything up, turn *Switch on automatically* off. Put the *Apply
 suggestion* buttons of your patterns into an entity-filter or conditional card
 and your dashboard shows them only when there is something to suggest.
 

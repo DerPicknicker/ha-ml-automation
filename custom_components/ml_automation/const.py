@@ -23,6 +23,7 @@ SAVE_DELAY_SECONDS = 30 * 60
 CONF_CONTROL_ENTITY = "control_entity"
 CONF_LEARN_ENTITIES = "learn_entities"
 
+# Were options before they became switches; still read as initial values.
 CONF_CONTROL_ON = "control_on"
 CONF_CONTROL_OFF = "control_off"
 CONF_LEAD_MINUTES = "lead_minutes"
@@ -60,10 +61,6 @@ CONTROL_DOMAINS = [
 
 # Domains without turn_on / turn_off: (domain, on service, off service).
 SWITCH_SERVICES = {"cover": ("cover", "open_cover", "close_cover")}
-
-# Sensors of the controlled device that show whether it is really being used,
-# best first. They are suggested as learning data during setup.
-USAGE_DEVICE_CLASSES = ("power", "current")
 
 # Non-numeric states that mean "nothing going on". Every other state counts as
 # active, so nobody has to list the active states of an entity.

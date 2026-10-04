@@ -6,7 +6,7 @@ repository.
 ## What this is
 
 ML Automation is a Home Assistant custom integration, distributed through HACS.
-The user picks an entity to control and one or more entities to learn from.
+The user picks one or more entities to learn from and an entity to control.
 The integration records the learning entities, works out by itself what "in
 use" looks like, learns at which times that usually happens, and switches the
 controlled entity on a bit before and off a while after those times. One
@@ -22,7 +22,7 @@ setup flow, find a way to learn or default it instead.
 custom_components/ml_automation/
   learner.py       The model. Pure Python, no Home Assistant imports.
   manager.py       One PatternManager per config entry: observe, learn, act.
-  config_flow.py   Config flow (what to control → what to learn from) and options flow.
+  config_flow.py   Config flow (what to learn from → what to control) and options flow.
   entity.py        Base entity; all entities follow the manager via a dispatcher signal.
   sensor.py, binary_sensor.py, switch.py, button.py, number.py
   diagnostics.py   What a bug report needs.
@@ -64,7 +64,9 @@ validation. All three must pass.
    time (on) and the off delay (off). The tick every minute executes what is
    due.
 
-With the automation switch off (or one direction disabled) nothing is switched;
+What the integration does by itself is decided by three switches whose state
+lives in the store, not in the options: the master switch and one per
+direction. For a direction it does not act in, nothing is switched;
 `manager.suggestion` then reports the switching the pattern calls for, the
 *Apply suggestion* button does it, and `ml_automation_suggestion` is fired once
 per new suggestion.

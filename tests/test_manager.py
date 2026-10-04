@@ -263,19 +263,79 @@ async def test_automation_switch_stops_control(
     assert not turn_on
 
 
-async def test_direction_can_be_disabled(
+async def test_only_switching_off(
+    hass: HomeAssistant, hass_storage: dict[str, Any], freezer
+) -> None:
+    """Cut standby power, but never power anything up."""
+    hass.states.async_set(POWER, "0.0")
+    hass.states.async_set(PLUG, "off")
+    turn_on = async_mock_service(hass, "homeassistant", "turn_on")
+    turn_off = async_mock_service(hass, "homeassistant", "turn_off")
+    entry = await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
+    assert _state(hass, "switch.tv_switch_on_automatically") == "on"
+    assert _state(hass, "switch.tv_switch_off_automatically") == "on"
+
+    await hass.services.async_call(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.tv_switch_on_automatically"},
+        blocking=True,
+    )
+    assert _state(hass, "sensor.tv_status") == "controlling"
+
+    # Switching on is left to the user, and merely suggested.
+    await move_to(hass, freezer, local(17, 45))
+    assert not turn_on
+    assert _state(hass, "sensor.tv_suggestion") == "switch_on"
+
+    hass.states.async_set(PLUG, "on")
+    hass.states.async_set(POWER, "1.0")
+    await move_to(hass, freezer, local(20, 0))
+    assert len(turn_off) == 1
+
+    # The choice survives a restart.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, "switch.tv_switch_on_automatically") == "off"
+    assert _state(hass, "switch.tv_switch_off_automatically") == "on"
+
+
+async def test_only_switching_on(
     hass: HomeAssistant, hass_storage: dict[str, Any], freezer
 ) -> None:
     hass.states.async_set(POWER, "0.0")
     hass.states.async_set(PLUG, "off")
     turn_on = async_mock_service(hass, "homeassistant", "turn_on")
-    await setup_entry(
-        hass, hass_storage, TV_CONFIG, daily_use(), options={CONF_CONTROL_ON: False}
+    turn_off = async_mock_service(hass, "homeassistant", "turn_off")
+    await setup_entry(hass, hass_storage, TV_CONFIG, daily_use())
+    await hass.services.async_call(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.tv_switch_off_automatically"},
+        blocking=True,
     )
 
     await move_to(hass, freezer, local(17, 45))
+    assert len(turn_on) == 1
 
-    assert not turn_on
+    hass.states.async_set(PLUG, "on")
+    hass.states.async_set(POWER, "1.0")
+    await move_to(hass, freezer, local(20, 0))
+    assert not turn_off
+    assert _state(hass, "sensor.tv_suggestion") == "switch_off"
+
+
+async def test_direction_set_as_option_is_kept(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """The directions were options before they became switches."""
+    hass.states.async_set(POWER, "0.0")
+    await setup_entry(
+        hass, hass_storage, TV_CONFIG, options={CONF_CONTROL_ON: False}
+    )
+
+    assert _state(hass, "switch.tv_switch_on_automatically") == "off"
+    assert _state(hass, "switch.tv_switch_off_automatically") == "on"
 
 
 async def test_relearn_forgets_everything(
