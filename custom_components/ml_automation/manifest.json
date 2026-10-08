@@ -8,11 +8,13 @@
     "@DerPicknicker"
   ],
   "config_flow": true,
-  "dependencies": ["conversation"],
+  "dependencies": [
+    "conversation"
+  ],
   "documentation": "https://github.com/DerPicknicker/ha-ml-automation",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/DerPicknicker/ha-ml-automation/issues",
   "requirements": [],
-  "version": "0.5.0"
+  "version": "0.6.0"
 }
