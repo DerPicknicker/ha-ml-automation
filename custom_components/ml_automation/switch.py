@@ -8,7 +8,8 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .entity import MLAutomationEntity
+from .const import CONF_RECOMMENDATIONS
+from .entity import MLAutomationEntity, RecommendationEntity
 from .learner import KIND_OFF, KIND_ON
 from .manager import MLAutomationConfigEntry
 
@@ -19,6 +20,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the switches."""
+    if entry.data.get(CONF_RECOMMENDATIONS):
+        async_add_entities([AutomaticActionsSwitch(entry)])
+        return
     async_add_entities(
         [
             AutomationSwitch(entry),
@@ -26,6 +30,27 @@ async def async_setup_entry(
             DirectionSwitch(entry, KIND_OFF),
         ]
     )
+
+
+class AutomaticActionsSwitch(RecommendationEntity, SwitchEntity):
+    """Pause or resume actions the user explicitly allowed to repeat."""
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialize the autonomy master switch."""
+        super().__init__(entry, "automatic_actions")
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether authorized actions may run automatically."""
+        return self.manager.automation_enabled
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Resume authorized actions."""
+        await self.manager.async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Keep suggesting while automatic execution is paused."""
+        await self.manager.async_set_enabled(False)
 
 
 class AutomationSwitch(MLAutomationEntity, SwitchEntity):

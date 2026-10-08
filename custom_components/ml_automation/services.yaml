@@ -1,0 +1,24 @@
+list_suggestions:
+  fields: {}
+apply_action_suggestion:
+  fields:
+    suggestion_id:
+      required: true
+      selector:
+        text:
+    authorize:
+      default: false
+      selector:
+        boolean:
+dismiss_action_suggestion:
+  fields:
+    suggestion_id:
+      required: true
+      selector:
+        text:
+revoke_action_autonomy:
+  fields:
+    action_key:
+      required: true
+      selector:
+        text:

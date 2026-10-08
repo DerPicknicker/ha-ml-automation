@@ -19,12 +19,46 @@ from custom_components.ml_automation.const import (
     CONF_LEAD_MINUTES,
     CONF_LEARN_ENTITIES,
     CONF_OFF_DELAY_MINUTES,
+    CONF_RECOMMENDATIONS,
     DOMAIN,
 )
 
 from .conftest import LAMP, PLUG, POWER, TV_CONFIG, setup_entry
 
 pytestmark = pytest.mark.usefixtures("setup_env")
+
+
+async def test_recommendations_have_no_setup_fields(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["step_id"] == "user"
+    assert result["data_schema"].schema == {}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {CONF_RECOMMENDATIONS: True}
+    assert result["result"].version == 3
+    options = await hass.config_entries.options.async_init(result["result"].entry_id)
+    assert options["step_id"] == "recommendations"
+    assert options["data_schema"].schema == {}
+
+
+async def test_pending_recommendation_flow_does_not_become_a_switch_pattern(
+    hass: HomeAssistant,
+) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_RECOMMENDATIONS: True},
+        unique_id="action_recommendations",
+        version=3,
+    ).add_to_hass(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
 
 
 def _default(result: dict[str, Any], field: str) -> Any:
@@ -38,11 +72,21 @@ def _default(result: dict[str, Any], field: str) -> Any:
 
 async def _start(hass: HomeAssistant, learn: list[str]) -> dict[str, Any]:
     """Start the flow and answer the first question: what to learn from."""
+    if not any(
+        entry.data.get(CONF_RECOMMENDATIONS)
+        for entry in hass.config_entries.async_entries(DOMAIN)
+    ):
+        MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_RECOMMENDATIONS: True},
+            unique_id="action_recommendations",
+            version=3,
+        ).add_to_hass(hass)
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "pattern"
     return await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_LEARN_ENTITIES: learn}
     )
@@ -125,7 +169,7 @@ async def test_needs_something_to_learn_from(hass: HomeAssistant) -> None:
     result = await _start(hass, [])
 
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "pattern"
     assert result["errors"] == {CONF_LEARN_ENTITIES: "no_entities"}
 
 

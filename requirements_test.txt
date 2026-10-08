@@ -1,1 +1,5 @@
 pytest-homeassistant-custom-component
+# Built-in Assist dependencies for the real conversation tests.
+gazetteer-matcher
+hassil
+home-assistant-intents

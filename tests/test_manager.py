@@ -593,7 +593,7 @@ async def test_migrates_hand_configured_entries(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.version == 2
+    assert entry.version == 3
     assert entry.data == {CONF_CONTROL_ENTITY: PLUG, CONF_LEARN_ENTITIES: [POWER]}
     assert entry.options == {"lead_minutes": 10, "off_delay_minutes": 30}
     assert entry.runtime_data.label_entities == [POWER]

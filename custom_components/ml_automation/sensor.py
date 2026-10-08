@@ -15,8 +15,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import STATUSES, SUGGESTION_NONE, SUGGESTION_OFF, SUGGESTION_ON, SUGGESTIONS
-from .entity import MLAutomationEntity
+from .const import (
+    CONF_RECOMMENDATIONS,
+    STATUSES,
+    SUGGESTION_NONE,
+    SUGGESTION_OFF,
+    SUGGESTION_ON,
+    SUGGESTIONS,
+)
+from .entity import MLAutomationEntity, RecommendationEntity
 from .learner import KIND_OFF, KIND_ON, WEEKDAYS, Habit
 from .manager import MLAutomationConfigEntry
 
@@ -27,6 +34,15 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the sensors."""
+    if entry.data.get(CONF_RECOMMENDATIONS):
+        async_add_entities(
+            [
+                ActionSuggestionSensor(entry),
+                ActionStatusSensor(entry),
+                ActionPatternsSensor(entry),
+            ]
+        )
+        return
     async_add_entities(
         [
             StatusSensor(entry),
@@ -38,6 +54,92 @@ async def async_setup_entry(
             DaysOfDataSensor(entry),
         ]
     )
+
+
+class ActionSuggestionSensor(RecommendationEntity, SensorEntity):
+    """Display a recommendation in any card that displays entity states."""
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialize the recommendation feed."""
+        super().__init__(entry, "action_suggestion")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return a readable title rather than a device-specific enum."""
+        return proposal.title if (proposal := self.manager.suggestion) else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return stable IDs, evidence, and a bounded queue for other frontends."""
+        return {
+            **(proposal.as_dict() if (proposal := self.manager.suggestion) else {}),
+            "suggestions": [item.as_dict() for item in self.manager.suggestions],
+        }
+
+
+class ActionStatusSensor(RecommendationEntity, SensorEntity):
+    """Explain learning progress and report command acceptance honestly."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = STATUSES
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialize the status sensor."""
+        super().__init__(entry, "action_status")
+
+    @property
+    def native_value(self) -> str:
+        """Return the reason for the current learning state."""
+        return self.manager.status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return observation coverage, permissions, and the last execution."""
+        return {
+            "days_of_data": len(self.manager.known_days),
+            "observations": len(self.manager.observations),
+            "actions": len(self.manager.actions),
+            "authorized_actions": [
+                {"action_key": key, **self.manager.actions[key].as_dict()}
+                for key in sorted(self.manager.authorized)
+                if key in self.manager.actions
+            ],
+            "last_result": self.manager.last_result,
+        }
+
+
+class ActionPatternsSensor(RecommendationEntity, SensorEntity):
+    """Show discovered schedules and event-to-action patterns."""
+
+    def __init__(self, entry: MLAutomationConfigEntry) -> None:
+        """Initialize the learned action count."""
+        super().__init__(entry, "action_patterns")
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of supported rules."""
+        return len(self.manager.rules)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose learned relationships without copying the observation log."""
+        return {
+            "model": "action_frequencies",
+            "patterns": [
+                {
+                    "rule_id": rule.key,
+                    "action_key": rule.action_key,
+                    "kind": rule.kind,
+                    "trigger": rule.trigger,
+                    "weekday": rule.weekday,
+                    "minute": rule.minute,
+                    "delay_seconds": rule.delay_seconds,
+                    "confidence": round(rule.confidence * 100),
+                    "support_days": rule.support_days,
+                }
+                for rule in self.manager.rules
+            ],
+        }
 
 
 class StatusSensor(MLAutomationEntity, SensorEntity):

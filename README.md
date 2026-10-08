@@ -4,8 +4,19 @@
 [![HACS custom repository](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A Home Assistant integration that learns when you use your devices and
-switches them for you, so you don't have to write an automation for every one.
+A Home Assistant integration that learns your actions and suggests what to do
+next, on any dashboard or through Assist. It can also repeat actions you have
+allowed automatically. The learner is local, pure Python, and needs no LLM,
+model download, GPU, or additional integration requirements.
+
+The first entry is **Action recommendations**, with no fields to configure.
+It observes actions performed through Home Assistant, learns recurring times
+and short sequences, and keeps the original action's target and parameters.
+For example, it can suggest starting your usual radio station on a speaker,
+setting a volume or temperature, activating a scene, or running a script.
+
+You can also add an individual **switching pattern** by adding the integration
+again. Existing switching patterns continue working as before:
 
 You tell it two things: **what to learn from** and **what to control**. There
 are no thresholds, schedules or states to enter. It records the learning data,
@@ -36,8 +47,157 @@ type *Integration*, then install *ML Automation* and restart Home Assistant.
 `custom_components` folder of your Home Assistant configuration and restart.
 
 After the restart, add a pattern with this button, or go to *Settings → Devices
-& services → Add integration → ML Automation*. Add the integration once per
-pattern you want to learn.
+& services → Add integration → ML Automation*. The first entry starts action
+recommendations without asking for settings. Add it again for each individual
+switching pattern you want to learn.
+
+## Action recommendations
+
+The recommender learns from direct, attributed action calls in Home Assistant.
+It records the action and its repeatable parameters, and significant state
+changes that may precede an action. It learns two kinds of pattern:
+
+- **Recurring times:** an action usually performed at a similar time, daily
+  or on a particular weekday.
+- **Short sequences:** an event usually followed by an action within ten
+  minutes. The typical delay is learned in ten-second buckets. For example,
+  after a speaker starts playing, you usually dim the living-room lights two
+  minutes later.
+
+Only completed days with at least 80% observation coverage are used. An action
+must recur on at least three distinct days, with at least 70% confidence.
+Missing time windows are excluded from opportunities rather than counted as
+actions you did not perform. Recent days have more weight. Weekly habits need
+several occurrences of that weekday, so expect a few weeks for those.
+
+There is no action-call history to import from the recorder: learning starts
+when this entry is added. Actions caused by this integration, known Home
+Assistant automations, and child script calls are excluded from learning.
+Unattributed calls are not treated as human actions. Outside automation tools
+using a user's API credentials may appear as attributed calls; Home Assistant
+does not always provide enough information to distinguish them.
+
+### Dashboard entities
+
+The **Action recommendations** device provides ordinary entities:
+
+| Entity | Purpose |
+| --- | --- |
+| Action suggestion | A readable title; attributes include the exact action, parameters, reason, confidence, expiry, and suggestion ID. The `suggestions` attribute contains up to five active proposals. |
+| Apply action suggestion | Execute the current suggestion once. |
+| Dismiss action suggestion | Dismiss this occurrence. Repeated dismissals suppress the learned rule. |
+| Always apply this action | Apply it now and allow future learned occurrences of this exact action and its parameters to run automatically. |
+| Automatic actions | Pause or resume previously authorized actions. Learning and suggestions continue. |
+| Action learning status | Explains whether observations, user actions, or regularity are missing; attributes list authorized actions and the last command result. |
+| Learned action patterns | Supported schedules and sequences, including their evidence. |
+| Refresh action patterns | Rebuild from completed days. |
+| Re-learn actions | Clear recorded actions, patterns, feedback, and automatic permissions. |
+
+Any dashboard that displays entities and invokes Home Assistant actions can
+use these. For example, an ordinary Entities card requires no custom card:
+
+```yaml
+type: entities
+title: Suggestions
+entities:
+  - sensor.action_recommendations_action_suggestion
+  - button.action_recommendations_apply_action_suggestion
+  - button.action_recommendations_dismiss_action_suggestion
+  - button.action_recommendations_always_apply_this_action
+  - switch.action_recommendations_automatic_actions
+```
+
+Entity IDs depend on your language and naming; select the entities from the
+device page. The suggestion sensor is `unknown` while there is no proposal.
+Conditional cards can hide it in that state. Buttons operate on the current
+proposal; clients displaying individual proposals should use their exact IDs.
+
+### Actions and notifications
+
+`ml_automation_action_suggestion` fires once when a new proposal is published.
+Its data contains `entry_id`, `suggestion_id`, `title`, `reason`, `confidence`,
+`support_days`, `kind`, `expires_at`, `action`, and `data`.
+
+Use these integration actions in dashboards, automations, or other clients:
+
+- `ml_automation.list_suggestions`: returns the current suggestions as response
+  data. Each proposal includes its stable ID.
+- `ml_automation.apply_action_suggestion`: requires `suggestion_id`; optional
+  `authorize: true` also permits future repetitions of the exact action.
+- `ml_automation.dismiss_action_suggestion`: requires `suggestion_id`.
+- `ml_automation.revoke_action_autonomy`: requires an `action_key` from the
+  status sensor's `authorized_actions` attribute.
+
+An expired or already-handled ID is rejected. Targets and registered actions
+are checked again at acceptance. Concurrent acceptances execute once, and
+handled occurrences and permissions survive restarts. A direct reversal or
+changed parameters within five minutes provide corrective feedback and revoke
+automatic permission for the previous action. Automatic undo detection covers
+common opposite actions and parameter changes; custom actions may have no
+recognizable inverse.
+
+A successful service handler is reported as `accepted`, not as confirmation
+that a physical device changed. A handler error is reported as `failed`.
+
+When an existing switching pattern controls the target, a recommended
+`turn_off` or `close_cover` respects that pattern's activity evidence and idle
+grace period. It postpones the stop until the device is unused, up to twelve
+hours; the pending stop survives restarts. A new start cancels the old stop.
+Other targets have no inferred use guard, so automatic behavior still requires
+permission for that exact action.
+
+### Assist without a language model
+
+The built-in Home Assistant conversation agent understands:
+
+1. **“What do you suggest?”** — reads the current proposal and reason.
+2. **“Apply the suggestion”**, **“Dismiss the suggestion”**, or
+   **“Always apply this suggestion”** — handles the proposal just read back in
+   that conversation, rather than whichever proposal is now first.
+
+German equivalents include **“Was schlägst du vor?”**, **“Wende den Vorschlag
+an”**, **“Verwirf den Vorschlag”**, and **“Führe diesen Vorschlag immer aus”**.
+No files are written to your `custom_sentences` directory. With an external
+conversation agent, enable Home Assistant's **Prefer handling commands
+locally** to route these sentence triggers through the built-in agent.
+
+The same executor handles dashboard acceptance, Assist acceptance, and
+authorized automatic execution. It can call any registered Home Assistant
+service action with captured, repeatable JSON parameters, including custom
+integration actions, scenes, and existing scripts. It does not reconstruct
+arbitrary script control flow from a service event. Actions requiring private,
+opaque, templated, or oversized arguments are not learned. A `playing` state
+alone cannot identify a playlist; learning a playback recommendation needs the
+actual playback call. Arbitrary custom actions use their service name as the
+display label when no translated label is available.
+
+### Resource bounds
+
+The recommender retains at most **5,000 observations, 128 distinct action
+specifications, 128 repeated trigger types, 256 learned rules, and five active
+suggestions**, over a 28-day window. Evicted observations also remove coverage
+for that period, so a busy home's shortened history does not invent absence.
+State changes to continuous numeric values are ignored; parameter choices are
+learned from action calls. Event refreshes are coalesced, and training runs in
+the executor once a day or on request. History writes are batched at thirty
+minute intervals to reduce SD-card wear; handled occurrences are saved before
+execution, and explicit permission changes are saved immediately. All limits
+and confidence defaults are internal; there are no tuning fields to fill in.
+
+Event entities use their `event_type` as a repeatable trigger; changing timestamp
+states are ignored. Sequence evidence is aggregated rather than retaining
+every matching pair of events.
+
+Run `python3 scripts/benchmark_actions.py` to measure the pure learner without
+installing Home Assistant. A local Python 3.14 run with 5,000 observations and
+128 action signatures took approximately 0.06 seconds for distributed history
+and 0.32 seconds for dense bursts, with about 4 MiB and 7.3 MiB of peak temporary
+Python allocations respectively. These measurements exclude the interpreter,
+input history and Home Assistant, and are not a Raspberry Pi benchmark.
+
+An optional language model could later interpret free-form requests or explain
+new relationships, while producing schema-validated action proposals. Neither
+learning nor execution depends on one.
 
 [![Open your Home Assistant instance and start setting up ML Automation.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=ml_automation)
 

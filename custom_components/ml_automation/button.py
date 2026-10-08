@@ -7,7 +7,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .entity import MLAutomationEntity
+from .const import CONF_RECOMMENDATIONS
+from .entity import MLAutomationEntity, RecommendationEntity
 from .manager import MLAutomationConfigEntry
 
 
@@ -17,9 +18,54 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the buttons."""
+    if entry.data.get(CONF_RECOMMENDATIONS):
+        async_add_entities(
+            [
+                ActionRecommendationButton(entry, "apply_action_suggestion"),
+                ActionRecommendationButton(entry, "dismiss_action_suggestion"),
+                ActionRecommendationButton(entry, "always_apply_action"),
+                ActionRecommendationButton(entry, "refresh_action_patterns"),
+                ActionRecommendationButton(entry, "relearn_actions"),
+            ]
+        )
+        return
     async_add_entities(
         [ApplySuggestionButton(entry), PredictNowButton(entry), RelearnButton(entry)]
     )
+
+
+class ActionRecommendationButton(RecommendationEntity, ButtonEntity):
+    """Apply, dismiss, authorize, or refresh the shared recommendation feed."""
+
+    def __init__(self, entry: MLAutomationConfigEntry, operation: str) -> None:
+        """Initialize an ordinary dashboard button."""
+        super().__init__(entry, operation)
+        self._operation = operation
+
+    @property
+    def available(self) -> bool:
+        """Enable action buttons only while a suggestion exists."""
+        return (
+            self._operation in ("refresh_action_patterns", "relearn_actions")
+            or self.manager.suggestion is not None
+        )
+
+    async def async_press(self) -> None:
+        """Apply the current proposal using its exact ID."""
+        if self._operation == "relearn_actions":
+            await self.manager.async_relearn()
+        elif self._operation == "refresh_action_patterns":
+            await self.manager.async_learn()
+            await self.manager.async_refresh()
+        elif (proposal := self.manager.suggestion) is not None:
+            if self._operation == "dismiss_action_suggestion":
+                await self.manager.async_dismiss(proposal.id)
+            else:
+                await self.manager.async_apply(
+                    proposal.id,
+                    self._context,
+                    authorize=self._operation == "always_apply_action",
+                )
 
 
 class ApplySuggestionButton(MLAutomationEntity, ButtonEntity):

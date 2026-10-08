@@ -23,6 +23,7 @@ from .const import (
     CONF_MIN_CONFIDENCE,
     CONF_MIN_DAYS,
     CONF_OFF_DELAY_MINUTES,
+    CONF_RECOMMENDATIONS,
     CONF_WINDOW_DAYS,
     CONTROL_DOMAINS,
     DEFAULT_GUARD_GRACE_MINUTES,
@@ -47,7 +48,9 @@ def _number(minimum: float, maximum: float, unit: str) -> selector.NumberSelecto
     )
 
 
-def suggest_control_entity(hass: HomeAssistant, learn_entities: list[str]) -> str | None:
+def suggest_control_entity(
+    hass: HomeAssistant, learn_entities: list[str]
+) -> str | None:
     """Suggest what to control, given what is learned from.
 
     If something switchable is learned from, that is the obvious candidate.
@@ -127,11 +130,12 @@ def _settings_schema(current: dict[str, Any]) -> vol.Schema:
 class MLAutomationConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a new learned pattern: what to learn from, and what to control."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         """Initialise the flow."""
         self._learn_entities: list[str] = []
+        self._recommendations_flow = False
 
     @staticmethod
     @callback
@@ -142,7 +146,25 @@ class MLAutomationConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the data to learn from."""
+        """Add the zero-field recommender, then offer additional switch patterns."""
+        if self._recommendations_flow or not any(
+            entry.data.get(CONF_RECOMMENDATIONS)
+            for entry in self._async_current_entries()
+        ):
+            self._recommendations_flow = True
+            await self.async_set_unique_id("action_recommendations")
+            self._abort_if_unique_id_configured()
+            if user_input is not None:
+                return self.async_create_entry(
+                    title="Action recommendations", data={CONF_RECOMMENDATIONS: True}
+                )
+            return self.async_show_form(step_id="user", data_schema=vol.Schema({}))
+        return await self.async_step_pattern(user_input)
+
+    async def async_step_pattern(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the data for an additional, existing-style switching pattern."""
         errors = {}
         if user_input is not None:
             if user_input[CONF_LEARN_ENTITIES]:
@@ -151,7 +173,7 @@ class MLAutomationConfigFlow(ConfigFlow, domain=DOMAIN):
             errors[CONF_LEARN_ENTITIES] = "no_entities"
 
         return self.async_show_form(
-            step_id="user", data_schema=vol.Schema(_learn_field([])), errors=errors
+            step_id="pattern", data_schema=vol.Schema(_learn_field([])), errors=errors
         )
 
     async def async_step_control(
@@ -196,6 +218,12 @@ class MLAutomationOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Change the settings."""
+        if self.config_entry.data.get(CONF_RECOMMENDATIONS):
+            if user_input is not None:
+                return self.async_create_entry(title="", data={})
+            return self.async_show_form(
+                step_id="recommendations", data_schema=vol.Schema({})
+            )
         errors = {}
         if user_input is not None:
             if user_input[CONF_LEARN_ENTITIES]:
@@ -209,3 +237,9 @@ class MLAutomationOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_recommendations(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show how action recommendations are controlled without setup options."""
+        return await self.async_step_init(user_input)

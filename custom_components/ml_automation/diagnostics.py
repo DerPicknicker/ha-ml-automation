@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .manager import MLAutomationConfigEntry
+from .recommendations import RecommendationManager
 
 
 async def async_get_config_entry_diagnostics(
@@ -15,6 +16,20 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return what is needed to understand why a pattern behaves as it does."""
     manager = entry.runtime_data
+    if isinstance(manager, RecommendationManager):
+        # Action arguments can include private media and notification content;
+        # counts and rule metadata suffice for a public bug report.
+        return {
+            "status": manager.status,
+            "model": "action_frequencies",
+            "observations": len(manager.observations),
+            "actions": len(manager.actions),
+            "days_of_data": len(manager.known_days),
+            "rules": len(manager.rules),
+            "suggestions": len(manager.suggestions),
+            "authorized_actions": len(manager.authorized),
+            "automation_enabled": manager.automation_enabled,
+        }
     forest = manager.model.forest
     return {
         "config": manager.conf,

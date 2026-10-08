@@ -2,17 +2,21 @@
   "config": {
     "step": {
       "user": {
-        "title": "What should it learn from?",
-        "description": "Pick one or more entities that show when something is in use: a power sensor, the device itself, a media player, a motion sensor … There is nothing else to set up; what counts as active is learned from the data.",
-        "data": {
-          "learn_entities": "Data to learn from"
-        }
+        "title": "Learn your Home Assistant actions",
+        "description": "Observe actions you perform in Home Assistant and learn recurring times and short sequences automatically. Suggestions appear as ordinary dashboard entities and work with Assist. Use Always apply to allow an exact action to repeat automatically. No fields are needed."
       },
       "control": {
         "title": "What should be controlled?",
         "description": "Pick the entity that should be switched on and off for you.",
         "data": {
           "control_entity": "Entity to control"
+        }
+      },
+      "pattern": {
+        "title": "What should it learn from?",
+        "description": "Pick one or more entities that show when something is in use: a power sensor, the device itself, a media player, a motion sensor … There is nothing else to set up; what counts as active is learned from the data.",
+        "data": {
+          "learn_entities": "Data to learn from"
         }
       }
     },
@@ -45,6 +49,10 @@
           "min_days": "Nothing is predicted before this many complete days were observed. It is also how many days are needed to tell weekdays apart.",
           "min_confidence": "A period counts as a habit when the model is at least this sure there is use."
         }
+      },
+      "recommendations": {
+        "title": "Action recommendations",
+        "description": "There are no learning settings to configure. Use Apply, Dismiss, Always apply and Automatic actions on the device page or a dashboard. Add ML Automation again to create a separate switching pattern."
       }
     },
     "error": {
@@ -69,6 +77,21 @@
       },
       "relearn": {
         "name": "Re-learn"
+      },
+      "apply_action_suggestion": {
+        "name": "Apply action suggestion"
+      },
+      "dismiss_action_suggestion": {
+        "name": "Dismiss action suggestion"
+      },
+      "always_apply_action": {
+        "name": "Always apply this action"
+      },
+      "refresh_action_patterns": {
+        "name": "Refresh action patterns"
+      },
+      "relearn_actions": {
+        "name": "Re-learn actions"
       }
     },
     "number": {
@@ -113,6 +136,23 @@
       },
       "probability": {
         "name": "Probability of use"
+      },
+      "action_suggestion": {
+        "name": "Action suggestion"
+      },
+      "action_patterns": {
+        "name": "Learned action patterns"
+      },
+      "action_status": {
+        "name": "Action learning status",
+        "state": {
+          "collecting": "Collecting observed days",
+          "no_activity": "No user actions recorded",
+          "no_pattern": "No regular action pattern yet",
+          "ready": "Ready, suggesting actions",
+          "controlling": "Running authorized actions",
+          "postponed": "Action postponed"
+        }
       }
     },
     "switch": {
@@ -124,7 +164,115 @@
       },
       "control_off": {
         "name": "Switch off automatically"
+      },
+      "automatic_actions": {
+        "name": "Automatic actions"
       }
+    }
+  },
+  "services": {
+    "list_suggestions": {
+      "name": "List action suggestions",
+      "description": "Return the currently active action suggestions and their IDs."
+    },
+    "apply_action_suggestion": {
+      "name": "Apply action suggestion",
+      "description": "Apply a specific active suggestion.",
+      "fields": {
+        "suggestion_id": {
+          "name": "Suggestion ID",
+          "description": "The exact ID returned by the suggestion sensor or List action suggestions."
+        },
+        "authorize": {
+          "name": "Always apply",
+          "description": "Also allow this exact action and its parameters to run automatically in the future."
+        }
+      }
+    },
+    "dismiss_action_suggestion": {
+      "name": "Dismiss action suggestion",
+      "description": "Dismiss this occurrence. Repeated dismissals suppress the learned rule.",
+      "fields": {
+        "suggestion_id": {
+          "name": "Suggestion ID",
+          "description": "The exact ID of the suggestion to dismiss."
+        }
+      }
+    },
+    "revoke_action_autonomy": {
+      "name": "Revoke automatic action",
+      "description": "Return an authorized action to suggestions only.",
+      "fields": {
+        "action_key": {
+          "name": "Action key",
+          "description": "The key listed under authorized_actions on the action learning status sensor."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "action_title": {
+      "message": "{action}: {target}"
+    },
+    "state_trigger": {
+      "message": "{target} became {state}"
+    },
+    "sequence_reason": {
+      "message": "Performed after {trigger} on {days} days."
+    },
+    "schedule_reason": {
+      "message": "Performed around this time on {days} days."
+    },
+    "label_play_media": {
+      "message": "Start playback"
+    },
+    "label_volume_set": {
+      "message": "Set volume"
+    },
+    "label_turn_on": {
+      "message": "Turn on"
+    },
+    "label_turn_off": {
+      "message": "Turn off"
+    },
+    "label_set_temperature": {
+      "message": "Set temperature"
+    },
+    "label_select_option": {
+      "message": "Select option"
+    },
+    "label_open_cover": {
+      "message": "Open"
+    },
+    "label_close_cover": {
+      "message": "Close"
+    },
+    "suggestion_expired": {
+      "message": "This suggestion has expired or was already handled."
+    },
+    "action_unavailable": {
+      "message": "The suggested action or its target is unavailable."
+    },
+    "action_failed": {
+      "message": "The recommended action failed."
+    },
+    "recommendations_not_loaded": {
+      "message": "Set up Action recommendations first."
+    },
+    "assist_no_suggestion": {
+      "message": "I have no suggestion right now."
+    },
+    "assist_ask_first": {
+      "message": "Ask what I suggest first."
+    },
+    "assist_dismissed": {
+      "message": "Suggestion dismissed."
+    },
+    "assist_failed": {
+      "message": "That suggestion expired or could not be applied."
+    },
+    "assist_applied": {
+      "message": "Action applied."
     }
   }
 }

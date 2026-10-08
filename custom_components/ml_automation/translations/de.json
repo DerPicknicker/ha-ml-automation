@@ -2,17 +2,21 @@
   "config": {
     "step": {
       "user": {
-        "title": "Woraus soll gelernt werden?",
-        "description": "Wähle eine oder mehrere Entitäten, die zeigen, wann etwas benutzt wird: einen Leistungssensor, das Gerät selbst, einen Mediaplayer, einen Bewegungsmelder … Mehr ist nicht einzustellen; was als aktiv gilt, wird aus den Daten gelernt.",
-        "data": {
-          "learn_entities": "Daten, aus denen gelernt wird"
-        }
+        "title": "Home-Assistant-Aktionen lernen",
+        "description": "Beobachtet Aktionen, die du in Home Assistant ausführst, und lernt wiederkehrende Zeiten und kurze Abläufe automatisch. Vorschläge erscheinen als normale Dashboard-Entitäten und funktionieren mit Assist. Mit Immer ausführen erlaubst du die automatische Wiederholung einer bestimmten Aktion. Es sind keine Angaben nötig."
       },
       "control": {
         "title": "Was soll gesteuert werden?",
         "description": "Wähle die Entität, die für dich ein- und ausgeschaltet werden soll.",
         "data": {
           "control_entity": "Zu steuernde Entität"
+        }
+      },
+      "pattern": {
+        "title": "Woraus soll gelernt werden?",
+        "description": "Wähle eine oder mehrere Entitäten, die zeigen, wann etwas benutzt wird: einen Leistungssensor, das Gerät selbst, einen Mediaplayer, einen Bewegungsmelder … Mehr ist nicht einzustellen; was als aktiv gilt, wird aus den Daten gelernt.",
+        "data": {
+          "learn_entities": "Daten, aus denen gelernt wird"
         }
       }
     },
@@ -45,6 +49,10 @@
           "min_days": "Vorher wird nichts vorhergesagt. So viele Tage sind auch nötig, um Wochentage zu unterscheiden.",
           "min_confidence": "Ein Zeitraum gilt als Gewohnheit, wenn das Modell mindestens so sicher ist, dass eine Nutzung stattfindet."
         }
+      },
+      "recommendations": {
+        "title": "Aktionsvorschläge",
+        "description": "Es gibt keine Lerneinstellungen. Nutze Ausführen, Verwerfen, Immer ausführen und Automatische Aktionen auf der Geräteseite oder im Dashboard. Füge ML Automation erneut hinzu, um ein separates Schaltmuster anzulegen."
       }
     },
     "error": {
@@ -69,6 +77,21 @@
       },
       "relearn": {
         "name": "Neu lernen"
+      },
+      "apply_action_suggestion": {
+        "name": "Aktionsvorschlag ausführen"
+      },
+      "dismiss_action_suggestion": {
+        "name": "Aktionsvorschlag verwerfen"
+      },
+      "always_apply_action": {
+        "name": "Diese Aktion immer ausführen"
+      },
+      "refresh_action_patterns": {
+        "name": "Aktionsmuster aktualisieren"
+      },
+      "relearn_actions": {
+        "name": "Aktionen neu lernen"
       }
     },
     "number": {
@@ -113,6 +136,23 @@
       },
       "probability": {
         "name": "Nutzungswahrscheinlichkeit"
+      },
+      "action_suggestion": {
+        "name": "Aktionsvorschlag"
+      },
+      "action_patterns": {
+        "name": "Gelernte Aktionsmuster"
+      },
+      "action_status": {
+        "name": "Aktionslernstatus",
+        "state": {
+          "collecting": "Beobachtete Tage sammeln",
+          "no_activity": "Keine Nutzeraktionen aufgezeichnet",
+          "no_pattern": "Noch kein regelmäßiges Aktionsmuster",
+          "ready": "Bereit, schlägt Aktionen vor",
+          "controlling": "Führt erlaubte Aktionen aus",
+          "postponed": "Aktion verschoben"
+        }
       }
     },
     "switch": {
@@ -124,7 +164,115 @@
       },
       "control_off": {
         "name": "Automatisch ausschalten"
+      },
+      "automatic_actions": {
+        "name": "Automatische Aktionen"
       }
+    }
+  },
+  "services": {
+    "list_suggestions": {
+      "name": "Aktionsvorschläge auflisten",
+      "description": "Gibt die aktiven Aktionsvorschläge und ihre IDs zurück."
+    },
+    "apply_action_suggestion": {
+      "name": "Aktionsvorschlag ausführen",
+      "description": "Führt einen bestimmten aktiven Vorschlag aus.",
+      "fields": {
+        "suggestion_id": {
+          "name": "Vorschlags-ID",
+          "description": "Die genaue ID aus dem Vorschlagssensor oder Aktionsvorschläge auflisten."
+        },
+        "authorize": {
+          "name": "Immer ausführen",
+          "description": "Erlaubt auch die zukünftige automatische Ausführung genau dieser Aktion mit ihren Parametern."
+        }
+      }
+    },
+    "dismiss_action_suggestion": {
+      "name": "Aktionsvorschlag verwerfen",
+      "description": "Verwirft diesen Vorschlag. Wiederholtes Verwerfen unterdrückt das gelernte Muster.",
+      "fields": {
+        "suggestion_id": {
+          "name": "Vorschlags-ID",
+          "description": "Die genaue ID des zu verwerfenden Vorschlags."
+        }
+      }
+    },
+    "revoke_action_autonomy": {
+      "name": "Automatische Aktion widerrufen",
+      "description": "Eine erlaubte Aktion wird wieder nur vorgeschlagen.",
+      "fields": {
+        "action_key": {
+          "name": "Aktionsschlüssel",
+          "description": "Der Schlüssel unter authorized_actions im Aktionslernstatussensor."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "action_title": {
+      "message": "{action}: {target}"
+    },
+    "state_trigger": {
+      "message": "{target} wurde {state}"
+    },
+    "sequence_reason": {
+      "message": "Nach {trigger} an {days} Tagen ausgeführt."
+    },
+    "schedule_reason": {
+      "message": "Um diese Zeit an {days} Tagen ausgeführt."
+    },
+    "label_play_media": {
+      "message": "Wiedergabe starten"
+    },
+    "label_volume_set": {
+      "message": "Lautstärke einstellen"
+    },
+    "label_turn_on": {
+      "message": "Einschalten"
+    },
+    "label_turn_off": {
+      "message": "Ausschalten"
+    },
+    "label_set_temperature": {
+      "message": "Temperatur einstellen"
+    },
+    "label_select_option": {
+      "message": "Option auswählen"
+    },
+    "label_open_cover": {
+      "message": "Öffnen"
+    },
+    "label_close_cover": {
+      "message": "Schließen"
+    },
+    "suggestion_expired": {
+      "message": "Dieser Vorschlag ist abgelaufen oder wurde bereits bearbeitet."
+    },
+    "action_unavailable": {
+      "message": "Die vorgeschlagene Aktion oder ihr Ziel ist nicht verfügbar."
+    },
+    "action_failed": {
+      "message": "Die vorgeschlagene Aktion ist fehlgeschlagen."
+    },
+    "recommendations_not_loaded": {
+      "message": "Richte zuerst Aktionsvorschläge ein."
+    },
+    "assist_no_suggestion": {
+      "message": "Ich habe gerade keinen Vorschlag."
+    },
+    "assist_ask_first": {
+      "message": "Frage zuerst nach meinem Vorschlag."
+    },
+    "assist_dismissed": {
+      "message": "Vorschlag verworfen."
+    },
+    "assist_failed": {
+      "message": "Der Vorschlag ist abgelaufen oder konnte nicht ausgeführt werden."
+    },
+    "assist_applied": {
+      "message": "Aktion ausgeführt."
     }
   }
 }

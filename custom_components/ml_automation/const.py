@@ -22,6 +22,7 @@ SAVE_DELAY_SECONDS = 30 * 60
 # --- Configuration keys -------------------------------------------------
 CONF_CONTROL_ENTITY = "control_entity"
 CONF_LEARN_ENTITIES = "learn_entities"
+CONF_RECOMMENDATIONS = "recommendations"
 
 # Were options before they became switches; still read as initial values.
 CONF_CONTROL_ON = "control_on"
@@ -118,3 +119,8 @@ STATUSES = [
     STATUS_CONTROLLING,
     STATUS_POSTPONED,
 ]
+
+
+def signal_update(entry_id: str) -> str:
+    """Return the dispatcher signal shared by both kinds of learned pattern."""
+    return f"{DOMAIN}_{entry_id}_update"

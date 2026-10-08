@@ -68,6 +68,7 @@ from .const import (
     STORAGE_VERSION,
     SWITCH_SERVICES,
     TARGET_OFF_STATES,
+    signal_update,
 )
 from .learner import (
     KIND_NUMERIC,
@@ -83,21 +84,17 @@ from .learner import (
     slots_from_timeline,
     upcoming_actions,
 )
+from .recommendations import RecommendationManager
 
 _LOGGER = logging.getLogger(__name__)
 
-type MLAutomationConfigEntry = ConfigEntry[PatternManager]
+type MLAutomationConfigEntry = ConfigEntry[PatternManager | RecommendationManager]
 
 # Projected actions are kept for a week in both directions: a weekday-only
 # habit can be up to a week away, and the last one that was due tells us which
 # state is expected right now.
 _SCHEDULE_PAST_DAYS = 7
 _SCHEDULE_DAYS = 2 * _SCHEDULE_PAST_DAYS + 1
-
-
-def signal_update(entry_id: str) -> str:
-    """Dispatcher signal sent whenever the manager's state changed."""
-    return f"{DOMAIN}_{entry_id}_update"
 
 
 def sample_state(state: State | None) -> tuple[float, str] | None:

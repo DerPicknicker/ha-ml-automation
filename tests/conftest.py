@@ -6,13 +6,22 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from homeassistant.components import recorder as _recorder
+from homeassistant.components.homeassistant import ExposedEntities
+from homeassistant.components.homeassistant.const import DATA_EXPOSED_ENTITIES
+from homeassistant.components.recorder import migration as _migration, util as _util
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import recorder as _recorder_helper
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
-from homeassistant.core import HomeAssistant
+# The recorder test fixture inspects the signatures of some recorder functions.
+# On Python 3.14 that evaluates their annotations, which use names the modules
+# only import for type checking. Make those names resolvable.
+from sqlalchemy.orm.session import Session
 
 from custom_components.ml_automation.const import (
     CONF_CONTROL_ENTITY,
@@ -20,15 +29,6 @@ from custom_components.ml_automation.const import (
     DOMAIN,
 )
 from custom_components.ml_automation.learner import SLOT_MINUTES, SLOTS_PER_DAY
-
-# The recorder test fixture inspects the signatures of some recorder functions.
-# On Python 3.14 that evaluates their annotations, which use names the modules
-# only import for type checking. Make those names resolvable.
-from sqlalchemy.orm.session import Session
-
-from homeassistant.components import recorder as _recorder
-from homeassistant.components.recorder import migration as _migration, util as _util
-from homeassistant.helpers import recorder as _recorder_helper
 
 for _module in (_migration, _util, _recorder_helper):
     for _name, _value in (("Recorder", _recorder.Recorder), ("Session", Session)):
@@ -60,6 +60,11 @@ async def setup_env(
     """
     await hass.config.async_set_time_zone("Europe/Berlin")
     freezer.move_to(NOW)
+    # The core integration is mocked by the HA fixtures. Assist needs the
+    # exposed-entity store that a real core setup initializes.
+    exposed = ExposedEntities(hass)
+    await exposed.async_initialize()
+    hass.data[DATA_EXPOSED_ENTITIES] = exposed
 
 
 def local(hour: int, minute: int = 0, *, day: int = NOW.day) -> datetime:
@@ -85,7 +90,10 @@ def daily_use(
     numeric = entity == POWER
     if not numeric:
         idle, active = 0.0, 1.0
-    slots = [active if slot(on) <= index < slot(off) else idle for index in range(SLOTS_PER_DAY)]
+    slots = [
+        active if slot(on) <= index < slot(off) else idle
+        for index in range(SLOTS_PER_DAY)
+    ]
     recorded: dict[str, dict[str, list[float]]] = {}
     for offset in range(1, days + 1):
         day = (NOW - timedelta(days=offset)).date().isoformat()
