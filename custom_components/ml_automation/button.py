@@ -41,6 +41,8 @@ class ActionRecommendationButton(RecommendationEntity, ButtonEntity):
         """Initialize an ordinary dashboard button."""
         super().__init__(entry, operation)
         self._operation = operation
+        if operation == "relearn_actions":
+            self._attr_entity_category = EntityCategory.CONFIG
 
     @property
     def available(self) -> bool:

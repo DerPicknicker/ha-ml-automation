@@ -26,6 +26,10 @@ from custom_components.ml_automation.const import CONF_RECOMMENDATIONS, DOMAIN
 from custom_components.ml_automation.diagnostics import (
     async_get_config_entry_diagnostics,
 )
+from custom_components.ml_automation.recommendations import (
+    MAX_ACTION_OBSERVATIONS,
+    MAX_STATE_OBSERVATIONS,
+)
 
 from .conftest import NOW, local, move_to
 
@@ -486,7 +490,8 @@ async def test_observation_and_action_limits_under_event_load(
     for index in range(MAX_OBSERVATIONS + 10):
         hass.states.async_set(SPEAKER, "playing" if index % 2 else "idle")
     await hass.async_block_till_done()
-    assert len(entry.runtime_data.observations) == MAX_OBSERVATIONS
+    assert len(entry.runtime_data.observations) == MAX_STATE_OBSERVATIONS + MAX_ACTIONS
+    assert len(entry.runtime_data.actions) == MAX_ACTIONS
 
 
 async def test_assist_rejects_expired_spoken_proposal(
@@ -629,13 +634,13 @@ async def test_postponed_stop_is_cancelled_by_a_new_manual_start(
     assert not calls and entry.runtime_data.suggestion is None
 
 
-async def test_event_entities_use_event_type_and_eviction_removes_coverage(
+async def test_busy_states_preserve_action_history_and_rare_sequence_triggers(
     hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
     hass.states.async_set(
         "event.remote", "2026-10-11T10:00:00+00:00", {"event_type": "pressed"}
     )
-    entry = await setup_recommender(hass, hass_storage, recorded_actions())
+    entry = await setup_recommender(hass, hass_storage, recorded_actions(sequence=True))
     manager = entry.runtime_data
     hass.states.async_set(
         "event.remote", "2026-10-11T10:01:00+00:00", {"event_type": "pressed"}
@@ -645,7 +650,80 @@ async def test_event_entities_use_event_type_and_eviction_removes_coverage(
     for index in range(MAX_OBSERVATIONS):
         hass.states.async_set("binary_sensor.busy", "on" if index % 2 else "off")
     await hass.async_block_till_done()
-    assert not manager.known_days
+    await manager.async_learn()
+    assert len(manager.known_days) == 3
+    assert sum(event.action_key is not None for event in manager.observations) == 3
+    assert any(
+        rule.kind == "sequence" and rule.trigger == f"state:{SPEAKER}:playing"
+        for rule in manager.rules
+    )
+    assert len(manager.observations) <= MAX_OBSERVATIONS
+    await hass.config_entries.async_unload(entry.entry_id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.trigger_start_days == manager.trigger_start_days
+    assert len(entry.runtime_data.known_days) == 3
+
+
+async def test_action_eviction_invalidates_missing_action_windows(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    hass.states.async_set(SPEAKER, "idle")
+    async_mock_service(hass, "media_player", "play_media")
+    entry = await setup_recommender(hass, hass_storage, recorded_actions())
+    for _ in range(MAX_ACTION_OBSERVATIONS + 1):
+        await hass.services.async_call(
+            "media_player",
+            "play_media",
+            DATA,
+            context=Context(user_id="human"),
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.known_days
+    await entry.runtime_data.async_learn()
+    assert not entry.runtime_data.rules
+
+
+async def test_recovery_snapshots_do_not_become_state_triggers(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    hass.states.async_set(SPEAKER, "unavailable")
+    entry = await setup_recommender(hass, hass_storage)
+    hass.states.async_set(SPEAKER, "off")
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.observations
+    hass.states.async_set(SPEAKER, "playing")
+    await hass.async_block_till_done()
+    assert entry.runtime_data.observations[-1].trigger == f"state:{SPEAKER}:playing"
+
+
+async def test_refresh_preserves_data_and_reset_explicitly_clears_it(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    hass.states.async_set(SPEAKER, "idle")
+    async_mock_service(hass, "media_player", "play_media")
+    entry = await setup_recommender(hass, hass_storage, recorded_actions())
+    manager = entry.runtime_data
+    observed = list(manager.observations)
+    await hass.services.async_call(
+        "button",
+        "press",
+        {"entity_id": "button.action_recommendations_refresh_action_patterns"},
+        blocking=True,
+    )
+    assert manager.observations == observed
+    assert len(manager.known_days) == 3
+    await hass.services.async_call(
+        "button",
+        "press",
+        {"entity_id": "button.action_recommendations_reset_action_learning"},
+        blocking=True,
+    )
+    assert not manager.observations
+    assert not manager.coverage
+    assert not manager.trigger_start_days
+    assert not manager.rules
 
 
 async def test_legacy_assist_registration_fallback(

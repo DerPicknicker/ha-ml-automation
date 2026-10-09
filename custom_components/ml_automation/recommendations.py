@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -24,6 +25,7 @@ from homeassistant.util import dt as dt_util
 from .action_learner import (
     MAX_ACTIONS,
     MAX_OBSERVATIONS,
+    MAX_TRIGGERS,
     MIN_SUPPORT_DAYS,
     SCHEDULE_WINDOW_MINUTES,
     WINDOW_DAYS,
@@ -43,6 +45,8 @@ from .const import (
 )
 
 MAX_SUGGESTIONS = 5
+MAX_STATE_OBSERVATIONS = MAX_OBSERVATIONS // 2
+MAX_ACTION_OBSERVATIONS = MAX_OBSERVATIONS - MAX_STATE_OBSERVATIONS
 _MAX_CONTEXTS = 512
 _FULL_DAY = (1 << 1440) - 1
 _MIN_OBSERVED_MINUTES = 1440 * 0.8
@@ -90,6 +94,7 @@ class RecommendationManager:
         self.actions: dict[str, ActionSpec] = {}
         self.observations: list[Observation] = []
         self.coverage: dict[str, int] = {}
+        self.trigger_start_days: dict[str, str] = {}
         self.rules: list[ActionRule] = []
         self.feedback: dict[str, dict[str, int]] = {}
         self.authorized: set[str] = set()
@@ -172,6 +177,7 @@ class RecommendationManager:
                 day: int(mask, 16) & _FULL_DAY
                 for day, mask in data.get("coverage", {}).items()
             }
+            self.trigger_start_days = data.get("trigger_start_days", {})
             self.feedback = data.get("feedback", {})
             self.authorized = set(data.get("authorized", [])) & self.actions.keys()
             self.automation_enabled = data.get("automation_enabled", True)
@@ -239,6 +245,7 @@ class RecommendationManager:
                 for event in self.observations
             ],
             "coverage": {day: hex(mask) for day, mask in self.coverage.items()},
+            "trigger_start_days": self.trigger_start_days,
             "feedback": self.feedback,
             "authorized": sorted(self.authorized),
             "automation_enabled": self.automation_enabled,
@@ -265,12 +272,18 @@ class RecommendationManager:
         self.observations = sorted(
             [event for event in self.observations if event.when.date() >= cutoff],
             key=lambda event: event.when.timestamp(),
-        )[-MAX_OBSERVATIONS:]
+        )
         self.coverage = {
             day: mask
             for day, mask in self.coverage.items()
             if day >= cutoff.isoformat()
         }
+        self.trigger_start_days = {
+            trigger: day
+            for trigger, day in self.trigger_start_days.items()
+            if day > cutoff.isoformat()
+        }
+        self._trim_observations()
         used = {event.action_key for event in self.observations}
         self.actions = {
             key: action
@@ -399,6 +412,8 @@ class RecommendationManager:
                     Observation(dt_util.now(), f"event:{entity_id}:{event_type}")
                 )
             return
+        if old.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
         # Continuous measurements and startup snapshots would drown useful
         # sequences; parameter changes are captured in the action calls.
         try:
@@ -418,18 +433,7 @@ class RecommendationManager:
 
     def _observe(self, observation: Observation) -> None:
         self.observations.append(observation)
-        if len(self.observations) > MAX_OBSERVATIONS:
-            del self.observations[: len(self.observations) - MAX_OBSERVATIONS]
-            # Evicting events also removes evidence of absence in that window.
-            oldest = self.observations[0].when
-            day = oldest.date().isoformat()
-            self.coverage = {
-                key: mask for key, mask in self.coverage.items() if key >= day
-            }
-            if day in self.coverage:
-                self.coverage[day] &= _FULL_DAY ^ (
-                    (1 << (oldest.hour * 60 + oldest.minute + 1)) - 1
-                )
+        self._trim_observations()
         for rule in self.rules:
             if rule.trigger == observation.trigger:
                 occurrence = f"{rule.key}:{observation.when.timestamp()}"
@@ -443,6 +447,47 @@ class RecommendationManager:
         if self._refresh_task is None or self._refresh_task.done():
             self._refresh_task = self.hass.async_create_task(self.async_refresh())
 
+    def _trim_observations(self) -> None:
+        """Protect action history and rare triggers from busy state sources."""
+        counts = Counter(
+            event.trigger for event in self.observations if event.action_key is None
+        )
+        for _ in range(max(0, counts.total() - MAX_STATE_OBSERVATIONS)):
+            trigger = max(counts, key=lambda key: (counts[key], key))
+            index = next(
+                index
+                for index, event in enumerate(self.observations)
+                if event.action_key is None and event.trigger == trigger
+            )
+            event = self.observations.pop(index)
+            counts[trigger] -= 1
+            start = (event.when.date() + timedelta(days=1)).isoformat()
+            self.trigger_start_days[trigger] = max(
+                start, self.trigger_start_days.get(trigger, start)
+            )
+            if len(self.trigger_start_days) > MAX_TRIGGERS:
+                # Bound metadata too; a global cutoff conservatively handles an
+                # instance with more independently overflowing state sources.
+                self.trigger_start_days = {"*": max(self.trigger_start_days.values())}
+
+        action_count = len(self.observations) - counts.total()
+        for _ in range(max(0, action_count - MAX_ACTION_OBSERVATIONS)):
+            index = next(
+                index
+                for index, event in enumerate(self.observations)
+                if event.action_key is not None
+            )
+            evicted = self.observations.pop(index).when
+            day = evicted.date().isoformat()
+            # Dropped calls leave unknown action windows, never negative data.
+            self.coverage = {
+                key: mask for key, mask in self.coverage.items() if key >= day
+            }
+            if day in self.coverage:
+                self.coverage[day] &= _FULL_DAY ^ (
+                    (1 << (evicted.hour * 60 + evicted.minute + 1)) - 1
+                )
+
     async def async_learn(self) -> None:
         """Build rules from completed days off the event loop."""
         async with self._refresh_lock:
@@ -453,6 +498,10 @@ class RecommendationManager:
                     list(self.observations),
                     {day: self.coverage[day.isoformat()] for day in self.known_days},
                     today=dt_util.now().date(),
+                    trigger_start_days={
+                        trigger: date.fromisoformat(day)
+                        for trigger, day in self.trigger_start_days.items()
+                    },
                 )
             )
             keys = {rule.key for rule in self.rules}
@@ -842,6 +891,7 @@ class RecommendationManager:
             self.actions.clear()
             self.observations.clear()
             self.coverage.clear()
+            self.trigger_start_days.clear()
             self.rules.clear()
             self.feedback.clear()
             self.authorized.clear()

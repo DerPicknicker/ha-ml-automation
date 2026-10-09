@@ -172,8 +172,9 @@ class ActionRule:
     @property
     def key(self) -> str:
         """Return the rule identity independently of its changing evidence."""
+        bucket = None if self.minute is None else self.minute // 30
         return _identifier(
-            f"{self.action_key}:{self.kind}:{self.trigger}:{self.weekday}:{None if self.minute is None else self.minute // 30}"
+            f"{self.action_key}:{self.kind}:{self.trigger}:{self.weekday}:{bucket}"
         )
 
 
@@ -205,6 +206,7 @@ def learn_actions(
     known_days: Collection[date] | Mapping[date, int],
     *,
     today: date,
+    trigger_start_days: Mapping[str, date] | None = None,
 ) -> list[ActionRule]:
     """Learn schedules and short sequences from complete, observed days."""
     days = {day for day in known_days if 0 < (today - day).days <= WINDOW_DAYS}
@@ -271,9 +273,21 @@ def learn_actions(
             )
         )
 
+    def trigger_observed(event: Observation) -> bool:
+        # A busy trigger can lose old occurrences without losing action calls.
+        # Only whole days after its last eviction have a complete denominator.
+        if event.action_key is not None or not trigger_start_days:
+            return True
+        start = max(
+            trigger_start_days.get("*", date.min),
+            trigger_start_days.get(event.trigger, date.min),
+        )
+        return event.when.date() >= start
+
     trigger_days: dict[str, set[date]] = defaultdict(set)
     for event in events:
-        trigger_days[event.trigger].add(event.when.date())
+        if trigger_observed(event):
+            trigger_days[event.trigger].add(event.when.date())
     eligible_triggers = set(
         sorted(
             (
@@ -288,7 +302,7 @@ def learn_actions(
     pairs: dict[tuple[str, str], _SequenceEvidence] = defaultdict(_SequenceEvidence)
     day_bits = {day: 1 << index for index, day in enumerate(sorted(days))}
     for index, event in enumerate(events):
-        if event.trigger not in eligible_triggers:
+        if event.trigger not in eligible_triggers or not trigger_observed(event):
             continue
         minute = event.when.hour * 60 + event.when.minute
         mask = ((1 << 11) - 1) << minute

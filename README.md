@@ -91,7 +91,7 @@ The **Action recommendations** device provides ordinary entities:
 | Action learning status | Explains whether observations, user actions, or regularity are missing; attributes list authorized actions and the last command result. |
 | Learned action patterns | Supported schedules and sequences, including their evidence. |
 | Refresh action patterns | Rebuild from completed days. |
-| Re-learn actions | Clear recorded actions, patterns, feedback, and automatic permissions. |
+| Reset action learning | Delete recorded actions, patterns, feedback, and automatic permissions. Use Refresh action patterns to retrain without deleting data. |
 
 Any dashboard that displays entities and invokes Home Assistant actions can
 use these. For example, an ordinary Entities card requires no custom card:
@@ -175,8 +175,11 @@ display label when no translated label is available.
 
 The recommender retains at most **5,000 observations, 128 distinct action
 specifications, 128 repeated trigger types, 256 learned rules, and five active
-suggestions**, over a 28-day window. Evicted observations also remove coverage
-for that period, so a busy home's shortened history does not invent absence.
+suggestions**, over a 28-day window. Up to 2,500 observations are reserved for
+action calls and 2,500 for state triggers. Frequent triggers lose their oldest
+events first, preserving rare triggers and action history. A trigger's affected
+days are excluded from sequence learning; evicted action calls invalidate
+action coverage for their window. Missing evidence never becomes absence.
 State changes to continuous numeric values are ignored; parameter choices are
 learned from action calls. Event refreshes are coalesced, and training runs in
 the executor once a day or on request. History writes are batched at thirty
@@ -185,8 +188,8 @@ execution, and explicit permission changes are saved immediately. All limits
 and confidence defaults are internal; there are no tuning fields to fill in.
 
 Event entities use their `event_type` as a repeatable trigger; changing timestamp
-states are ignored. Sequence evidence is aggregated rather than retaining
-every matching pair of events.
+states and state recovery snapshots are ignored. Sequence evidence is aggregated
+rather than retaining every matching pair of events.
 
 Run `python3 scripts/benchmark_actions.py` to measure the pure learner without
 installing Home Assistant. A local Python 3.14 run with 5,000 observations and

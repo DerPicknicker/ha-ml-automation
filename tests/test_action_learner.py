@@ -122,6 +122,32 @@ def test_action_identity_includes_parameters_and_ignores_mapping_order() -> None
     assert first.key != different.key
 
 
+def test_evicted_trigger_days_cannot_inflate_sequence_confidence() -> None:
+    days = [TODAY - timedelta(days=index) for index in range(1, 5)]
+    events = []
+    for day in days:
+        events.append(Observation(at(day, 10), "busy"))
+        events.append(Observation(at(day, 10), "rare"))
+        events.append(Observation(at(day, 10, 2), "play", PLAY.key))
+    rules = learn_actions(
+        events,
+        days,
+        today=TODAY,
+        trigger_start_days={"busy": TODAY - timedelta(days=2)},
+    )
+    assert not any(rule.trigger == "busy" for rule in rules)
+    assert any(rule.trigger == "rare" and rule.support_days == 4 for rule in rules)
+    assert any(rule.kind == "schedule" and rule.support_days == 4 for rule in rules)
+    rules = learn_actions(
+        events,
+        days,
+        today=TODAY,
+        trigger_start_days={"*": TODAY - timedelta(days=2)},
+    )
+    assert not any(rule.kind == "sequence" for rule in rules)
+    assert any(rule.kind == "schedule" for rule in rules)
+
+
 @pytest.mark.parametrize(
     "data",
     [

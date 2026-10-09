@@ -91,7 +91,7 @@
         "name": "Refresh action patterns"
       },
       "relearn_actions": {
-        "name": "Re-learn actions"
+        "name": "Reset action learning"
       }
     },
     "number": {
